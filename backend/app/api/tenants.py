@@ -16,7 +16,19 @@ router = APIRouter(prefix="/tenants", tags=["tenants"])
 
 
 def _set_advances(db: Session, tenant: models.Tenant, advances: list[AdvanceCreate]) -> None:
-    """Ersetzt die Vorauszahlungs-Zeiträume und setzt die aktuelle Vorauszahlung."""
+    """Ersetzt die Vorauszahlungs-Zeiträume und setzt die aktuelle Vorauszahlung.
+
+    Änderungen der Vorauszahlung sind nur zum Monatsanfang (1. des Monats)
+    zulässig – die erste/früheste Vorauszahlung (z. B. beim Einzug) ist davon
+    ausgenommen.
+    """
+    sorted_adv = sorted(advances, key=lambda a: a.valid_from)
+    for i, adv in enumerate(sorted_adv):
+        if i > 0 and adv.valid_from.day != 1:
+            raise HTTPException(
+                422,
+                "Vorauszahlungsänderungen sind nur zum Monatsanfang (1. des Monats) zulässig",
+            )
     tenant.advance_payments.clear()  # cascade delete-orphan
     db.flush()
     for adv in advances:

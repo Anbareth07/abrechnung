@@ -80,6 +80,10 @@ export interface Invoice {
   id: number;
   property_id: number;
   cost_category_id: number;
+  kind?: string | null;
+  valid_from?: string | null;
+  annual_amount?: Money | null;
+  lease_unit_id?: number | null;
   invoice_number?: string | null;
   supplier?: string | null;
   description?: string | null;
@@ -132,6 +136,26 @@ export interface WaterResult {
   warnings: string[];
 }
 
+export interface CategoryShare {
+  code: string;
+  name: string;
+  allocation_key: string;
+  year_cost: number;
+  basis_label: string;
+  basis_total: number | null;
+  basis_share: number | null;
+  days: number;
+  amount: number;
+}
+
+export interface AdvanceSegment {
+  valid_from: string;
+  valid_to: string;
+  amount: number;
+  days: number;
+  months: number;
+}
+
 export interface TenantLine {
   tenant_id: number;
   name: string;
@@ -142,7 +166,11 @@ export interface TenantLine {
   tenant_days: number;
   time_factor: number;
   advance_months: number;
+  period_start: string;
+  period_end: string;
   breakdown: Record<string, number>;
+  details: CategoryShare[];
+  advance_breakdown: AdvanceSegment[];
   total_costs: number;
   advance_total: number;
   saldo: number;
@@ -169,4 +197,30 @@ export interface MissingItem {
   kind: string;
   label: string;
   detail: string;
+}
+
+export interface FinalizedTenantLine {
+  tenant_id: number;
+  name: string;
+  designation: string;
+  living_area: number;
+  utility_area: number;
+  tenant_days: number;
+  time_factor: number;
+  advance_months: number;
+  breakdown: Record<string, number>;
+  total_costs: number;
+  advance_total: number;
+  saldo: number;
+}
+
+export interface FinalizedResult {
+  property_id: number;
+  property_name: string;
+  year: number;
+  status: string;
+  computed_at: string | null;
+  meta: Record<string, unknown>;
+  category_names: Record<string, string>;
+  tenant_lines: FinalizedTenantLine[];
 }

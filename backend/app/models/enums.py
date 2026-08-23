@@ -34,3 +34,17 @@ class SettlementStatus(str, Enum):
 class TechemKind(str, Enum):
     GAS = "GAS"
     HEATING_ELECTRICITY = "HEATING_ELECTRICITY"
+
+
+class InvoiceKind(str, Enum):
+    """Art einer Rechnung – steuert Eingabelayout und Verteilung."""
+
+    GRUNDSTEUER = "GRUNDSTEUER"  # wiederkehrend: gültig ab + Jahresbetrag, bis neuer Bescheid
+    WASSER = "WASSER"
+    STROM = "STROM"
+    VERSICHERUNG_HAFTPFLICHT = "VERSICHERUNG_HAFTPFLICHT"
+    VERSICHERUNG_WOHNGEBAEUDE = "VERSICHERUNG_WOHNGEBAEUDE"
+    GARTEN = "GARTEN"
+    LEGIONELLEN = "LEGIONELLEN"
+    SCHORNSTEINFEGER = "SCHORNSTEINFEGER"  # objekt- oder wohneinheitbezogen
+    SONSTIGE = "SONSTIGE"

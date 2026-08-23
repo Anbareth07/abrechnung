@@ -4,6 +4,8 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..models.enums import InvoiceKind
+
 
 class InvoiceItemCreate(BaseModel):
     from_date: date
@@ -34,6 +36,10 @@ class InvoiceItemRead(BaseModel):
 class InvoiceCreate(BaseModel):
     property_id: int
     cost_category_id: int
+    kind: Optional[InvoiceKind] = None
+    valid_from: Optional[date] = None
+    annual_amount: Optional[Decimal] = None
+    lease_unit_id: Optional[int] = None
     invoice_number: Optional[str] = None
     supplier: Optional[str] = None
     description: Optional[str] = None
@@ -47,6 +53,10 @@ class InvoiceCreate(BaseModel):
 
 class InvoiceUpdate(BaseModel):
     cost_category_id: Optional[int] = None
+    kind: Optional[InvoiceKind] = None
+    valid_from: Optional[date] = None
+    annual_amount: Optional[Decimal] = None
+    lease_unit_id: Optional[int] = None
     invoice_number: Optional[str] = None
     supplier: Optional[str] = None
     description: Optional[str] = None
@@ -64,6 +74,10 @@ class InvoiceRead(BaseModel):
     id: int
     property_id: int
     cost_category_id: int
+    kind: Optional[str]
+    valid_from: Optional[date]
+    annual_amount: Optional[Decimal]
+    lease_unit_id: Optional[int]
     invoice_number: Optional[str]
     supplier: Optional[str]
     description: Optional[str]

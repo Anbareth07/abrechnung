@@ -1,5 +1,8 @@
 """API für die Abrechnungsberechnung, den Vollständigkeits-Check und das Finalisieren."""
 
+import re
+import unicodedata
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy import select
@@ -12,6 +15,13 @@ from ..services.engine import compute_settlement
 from ..services.pdf import generate_tenant_pdf
 
 router = APIRouter(prefix="/settlements", tags=["settlements"])
+
+
+def _safe_filename(name: str) -> str:
+    """Wandelt einen Namen in einen dateinamentauglichen String (ASCII, Unterstriche)."""
+    text = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    text = re.sub(r"[^A-Za-z0-9]+", "_", text).strip("_")
+    return text or "Export"
 
 
 @router.get("/{property_id}/{year}")
@@ -31,15 +41,20 @@ def get_completeness(property_id: int, year: int, db: Session = Depends(get_db))
 
 @router.get("/{property_id}/{year}/tenants/{tenant_id}/pdf")
 def get_tenant_pdf(property_id: int, year: int, tenant_id: int, db: Session = Depends(get_db)):
-    """Mieter-PDF für die Jahresabrechnung."""
+    """Mieter-PDF für die Jahresabrechnung (nur Tabelle, Querformat)."""
     try:
         pdf = generate_tenant_pdf(db, property_id, year, tenant_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    prop = db.get(models.Property, property_id)
+    tenant = db.get(models.Tenant, tenant_id)
+    prop_name = _safe_filename(prop.name) if prop else "Objekt"
+    tenant_name = _safe_filename(tenant.name) if tenant else "Mieter"
+    filename = f"Nebenkosten_{year}_{tenant_name}_{prop_name}.pdf"
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="Nebenkosten_{year}_{tenant_id}.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -105,4 +120,60 @@ def finalize_settlement(property_id: int, year: int, db: Session = Depends(get_d
         "status": settlement.status.value,
         "tenant_count": len(result.tenant_lines),
         "warnings": result.warnings,
+    }
+
+
+@router.get("/{property_id}/{year}/finalized")
+def get_finalized_settlement(property_id: int, year: int, db: Session = Depends(get_db)):
+    """Gibt den finalisierten Snapshot einer Abrechnung zurück (falls vorhanden).
+
+    Der Snapshot bleibt nach späteren Datenänderungen unverändert und kann so
+    mit der live berechneten Abrechnung verglichen werden.
+    """
+    prop = db.get(models.Property, property_id)
+    if prop is None:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    settlement = db.scalar(
+        select(models.Settlement).where(
+            models.Settlement.property_id == property_id,
+            models.Settlement.year == year,
+        )
+    )
+    if settlement is None or settlement.status != models.SettlementStatus.FINAL:
+        raise HTTPException(404, "Noch nicht finalisiert")
+
+    cats = db.execute(
+        select(models.CostCategory).where(models.CostCategory.property_id == property_id)
+    ).scalars().all()
+    names = {c.code: c.name for c in cats}
+    # Vom Engine erzeugte Sondercodes (Wasser) mit sprechenden Namen ergänzen
+    names.setdefault("WASSER_GARTEN", "Wasserverbrauch Garten")
+    names.setdefault("WASSER_VERBRAUCH", "Wasserkosten (Verbrauch)")
+    return {
+        "property_id": property_id,
+        "property_name": prop.name,
+        "year": year,
+        "status": settlement.status.value,
+        "computed_at": (
+            settlement.computed_at.isoformat() if settlement.computed_at is not None else None
+        ),
+        "meta": settlement.meta,
+        "category_names": names,
+        "tenant_lines": [
+            {
+                "tenant_id": line.tenant_id,
+                "name": line.detail.get("tenant_name", ""),
+                "designation": line.detail.get("designation", ""),
+                "living_area": line.detail.get("living_area", 0),
+                "utility_area": line.detail.get("utility_area", 0),
+                "tenant_days": line.detail.get("tenant_days", 0),
+                "time_factor": line.detail.get("time_factor", 0),
+                "advance_months": line.detail.get("advance_months", 0),
+                "breakdown": line.detail.get("breakdown", {}),
+                "total_costs": float(line.total_costs),
+                "advance_total": float(line.advance_total),
+                "saldo": float(line.saldo),
+            }
+            for line in settlement.lines
+        ],
     }

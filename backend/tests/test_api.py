@@ -128,6 +128,104 @@ def test_full_flow(client):
     assert final["tenant_count"] == 1
 
 
+def test_completeness_recurring_grundsteuer(client):
+    """Wiederkehrende Grundsteuer (gültig ab + Jahresbetrag, ohne Positionen)
+    gilt im Vollständigkeits-Check als vorhandene Rechnung."""
+    p = client.post("/properties", json={"name": "Objekt 1", "street": ""}).json()
+    cat = client.post(
+        "/cost-categories", json={"property_id": p["id"], "name": "Grundsteuer"}
+    ).json()
+    client.post(
+        "/allocation-configs",
+        json={
+            "property_id": p["id"],
+            "cost_category_id": cat["id"],
+            "allocation_key": "NF",
+            "sort_order": 1,
+        },
+    ).json()
+    u = client.post(
+        "/lease-units",
+        json={
+            "property_id": p["id"],
+            "designation": "W1",
+            "living_area": "50.0",
+            "extra_area": "50.0",
+        },
+    ).json()
+    client.post(
+        "/tenants",
+        json={
+            "lease_unit_id": u["id"],
+            "name": "Mieter A",
+            "move_in": "2020-01-01",
+            "monthly_advance": "100.00",
+        },
+    ).json()
+
+    # Ohne Rechnung → Grundsteuer fehlt
+    missing = client.get(f"/settlements/{p['id']}/2026/completeness").json()
+    assert any(m["label"].startswith("Rechnung fehlt: Grundsteuer") for m in missing)
+
+    # Wiederkehrende Grundsteuer anlegen (keine Positionen)
+    client.post(
+        "/invoices",
+        json={
+            "property_id": p["id"],
+            "cost_category_id": cat["id"],
+            "kind": "GRUNDSTEUER",
+            "valid_from": "2020-01-01",
+            "annual_amount": "1200.00",
+            "period_start": "2026-01-01",
+            "period_end": "2026-12-31",
+            "items": [],
+        },
+    )
+    missing2 = client.get(f"/settlements/{p['id']}/2026/completeness").json()
+    assert not any(m["label"].startswith("Rechnung fehlt: Grundsteuer") for m in missing2)
+
+
+def test_finalized_snapshot(client):
+    """Snapshot-Endpunkt: 404 vor Finalisierung, danach gespeicherte Werte zurückgeben."""
+    pid = _seed_objekt1(client)
+
+    # Vor der Finalisierung → 404
+    missing = client.get(f"/settlements/{pid}/2026/finalized")
+    assert missing.status_code == 404
+
+    live = client.get(f"/settlements/{pid}/2026").json()
+    client.post(f"/settlements/{pid}/2026/finalize")
+
+    snap = client.get(f"/settlements/{pid}/2026/finalized").json()
+    assert snap["status"] == "FINAL"
+    assert snap["property_name"] == "Objekt 1"
+    assert len(snap["tenant_lines"]) == 1
+
+    line = snap["tenant_lines"][0]
+    live_line = live["tenant_lines"][0]
+    assert line["name"] == "Mieter A"
+    # Snapshot ist auf 2 Nachkommastellen gerundet gespeichert
+    assert line["total_costs"] == round(live_line["total_costs"], 2)
+    assert line["advance_total"] == round(live_line["advance_total"], 2)
+    assert line["saldo"] == round(live_line["saldo"], 2)
+    # Kostenarten-Namen sind im Snapshot enthalten
+    assert "trinkwasser" in snap["category_names"]
+
+    # Der Snapshot bleibt unverändert, auch wenn live eine Rechnung dazukommt
+    client.post(
+        "/invoices",
+        json={
+            "property_id": pid,
+            "cost_category_id": 1,
+            "period_start": "2026-01-01",
+            "period_end": "2026-12-31",
+            "items": [{"from_date": "2026-01-01", "to_date": "2026-12-31", "gross_amount": "999.00"}],
+        },
+    )
+    snap2 = client.get(f"/settlements/{pid}/2026/finalized").json()
+    assert snap2["tenant_lines"][0]["total_costs"] == line["total_costs"]
+
+
 def test_tenant_contact_and_monthly_costs(client):
     p = client.post("/properties", json={"name": "Objekt 1"}).json()
     u = client.post(
@@ -203,6 +301,46 @@ def test_tenant_contact_and_monthly_costs(client):
     assert float(line["total_costs"]) == 0.0  # keine umlagefähigen Kosten vorhanden
     assert "monthly_costs" not in line
     assert float(line["saldo"]) == float(-line["advance_total"])
+
+
+def test_advance_change_must_be_month_start(client):
+    p = client.post("/properties", json={"name": "Objekt 1"}).json()
+    u = client.post(
+        "/lease-units",
+        json={"property_id": p["id"], "designation": "W1", "living_area": "50.0"},
+    ).json()
+
+    # Erste Vorauszahlung (Einzug) darf unter dem Monat liegen, Änderung nur zum Monatsanfang
+    ok = client.post(
+        "/tenants",
+        json={
+            "lease_unit_id": u["id"],
+            "name": "Mieter A",
+            "move_in": "2025-07-15",
+            "monthly_advance": "150.00",
+            "advances": [
+                {"valid_from": "2025-07-15", "amount": "150.00"},
+                {"valid_from": "2025-10-01", "amount": "180.00"},
+            ],
+        },
+    )
+    assert ok.status_code == 201
+
+    # Änderung unter dem Monat → 422
+    bad = client.post(
+        "/tenants",
+        json={
+            "lease_unit_id": u["id"],
+            "name": "Mieter B",
+            "move_in": "2025-07-15",
+            "monthly_advance": "150.00",
+            "advances": [
+                {"valid_from": "2025-07-15", "amount": "150.00"},
+                {"valid_from": "2025-10-15", "amount": "180.00"},
+            ],
+        },
+    )
+    assert bad.status_code == 422
 
 
 def test_category_auto_code(client):

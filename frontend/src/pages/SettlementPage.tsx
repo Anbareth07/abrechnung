@@ -1,44 +1,52 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Accordion,
   Alert,
-  Badge,
   Button,
-  Card,
   Group,
   Select,
-  SimpleGrid,
+  SegmentedControl,
   Stack,
   Table,
   Text,
   Title,
+  Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { API_URL, api, fmt } from "../api/client";
+import { API_URL, api, fmt, num } from "../api/client";
 import { useTestData } from "../context/TestDataContext";
 import { useCrud } from "../hooks/useCrud";
 import { visibleProperties } from "../utils/testData";
-import type { MissingItem, Property, SettlementResult } from "../api/types";
+import type { FinalizedResult, MissingItem, Property, SettlementResult } from "../api/types";
 
-const KEY_LABEL: Record<string, string> = {
-  WF: "Wohnfläche",
-  NF: "Nutzfläche",
-  WOHNUNG: "Wohnung",
-  CONSUMPTION: "Verbrauch",
-  NONE: "—",
+// Zeigt Werte wie eingegeben/berechnet an – ohne Aufrundung auf 2 Stellen
+const fmtNoRound = (v: unknown): string => {
+  const n = num(v);
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString("de-DE", { maximumFractionDigits: 8 });
+};
+
+// Datum "2025-06-30" → "30.06." (ohne Jahr) bzw. "30.06.2025" (mit Jahr).
+// Fehlt das Datum (z. B. veraltete Antwort), wird auf Jahresgrenzen zurückgefallen.
+const fmtPeriod = (iso: string | null | undefined, year: number, withYear = false): string => {
+  if (!iso) return withYear ? `31.12.${year}` : "01.01";
+  const [y, m, d] = iso.split("-");
+  return withYear ? `${d}.${m}.${y}` : `${d}.${m}`;
 };
 
 // Abrechnungsjahre dynamisch: von 2025 (Start) bis aktuelles Jahr + 3,
 // damit Folgejahre (z. B. 2027, 2031) ohne Codeänderung verfügbar sind.
 const CURRENT_YEAR = new Date().getFullYear();
+// Abrechnung erfolgt immer für das Vorjahr → Standardjahr = aktuelles Jahr − 1
+const DEFAULT_YEAR = CURRENT_YEAR - 1;
 const YEARS = Array.from({ length: CURRENT_YEAR + 3 - 2025 + 1 }, (_, i) => String(2025 + i));
 
 export default function SettlementPage() {
   const props = useCrud<Property>("/properties", "properties");
   const { hideTest } = useTestData();
   const [propertyId, setPropertyId] = useState<string | null>(null);
-  const [year, setYear] = useState<string>(String(CURRENT_YEAR));
+  const [year, setYear] = useState<string>(String(DEFAULT_YEAR));
 
   const result = useQuery({
     queryKey: ["settlement", propertyId, year],
@@ -53,6 +61,29 @@ export default function SettlementPage() {
     queryFn: async () =>
       (await api.get<MissingItem[]>(`/settlements/${propertyId}/${year}/completeness`)).data,
   });
+
+  // Umschalter: live berechnete Abrechnung vs. finalisierter Snapshot
+  const [view, setView] = useState<"live" | "finalized">("live");
+  const finalized = useQuery({
+    queryKey: ["settlementFinalized", propertyId, year],
+    enabled: !!propertyId && view === "finalized",
+    retry: false,
+    queryFn: async () =>
+      (await api.get<FinalizedResult>(`/settlements/${propertyId}/${year}/finalized`)).data,
+  });
+
+  // Aufgeklappte Mieter-Karten – geteilt zwischen Live und Finalisiert,
+  // damit der Zustand beim Umschalten erhalten bleibt.
+  const [openTenants, setOpenTenants] = useState<string[]>([]);
+  useEffect(() => {
+    setOpenTenants([]);
+  }, [propertyId, year]);
+  useEffect(() => {
+    const first = result.data?.tenant_lines[0];
+    if (first) {
+      setOpenTenants((prev) => (prev.length === 0 ? [String(first.tenant_id)] : prev));
+    }
+  }, [result.data]);
 
   if (!propertyId) {
     return (
@@ -81,7 +112,20 @@ export default function SettlementPage() {
           onChange={setPropertyId}
           w={280}
         />
-        <Select label="Jahr" data={YEARS} value={year} onChange={(v) => setYear(v ?? String(CURRENT_YEAR))} w={120} />
+        <Select label="Jahr" data={YEARS} value={year} onChange={(v) => setYear(v ?? String(DEFAULT_YEAR))} w={120} />
+        <Stack gap={5}>
+          <Text size="sm" fw={500} style={{ lineHeight: 1.55 }}>
+            Ansicht
+          </Text>
+          <SegmentedControl
+            value={view}
+            onChange={(v) => setView(v as "live" | "finalized")}
+            data={[
+              { value: "live", label: "Live" },
+              { value: "finalized", label: "Finalisiert" },
+            ]}
+          />
+        </Stack>
       </Group>
 
       {completeness.data && completeness.data.length > 0 && (
@@ -97,17 +141,37 @@ export default function SettlementPage() {
       )}
 
       {result.isLoading && <Text>Berechne …</Text>}
-      {result.data && (
+      {view === "live" && result.data && (
         <ResultView
           data={result.data}
           propertyId={Number(propertyId)}
           year={Number(year)}
+          street={props.list.data?.find((p) => p.id === Number(propertyId))?.street ?? ""}
+          open={openTenants}
+          onOpenChange={setOpenTenants}
           onFinalized={() => {
             result.refetch();
             completeness.refetch();
           }}
         />
       )}
+      {view === "finalized" &&
+        (finalized.isLoading ? (
+          <Text>Lade Snapshot …</Text>
+        ) : finalized.isError ? (
+          <Text c="dimmed">
+            Noch nicht finalisiert – erst „Abrechnung finalisieren“ ausführen.
+          </Text>
+        ) : (
+          finalized.data && (
+            <FinalizedView
+              data={finalized.data}
+              street={props.list.data?.find((p) => p.id === Number(propertyId))?.street ?? ""}
+              open={openTenants}
+              onOpenChange={setOpenTenants}
+            />
+          )
+        ))}
     </Stack>
   );
 }
@@ -116,11 +180,17 @@ function ResultView({
   data,
   propertyId,
   year,
+  street,
+  open,
+  onOpenChange,
   onFinalized,
 }: {
   data: SettlementResult;
   propertyId: number;
   year: number;
+  street: string;
+  open: string[];
+  onOpenChange: (value: string[]) => void;
   onFinalized: () => void;
 }) {
   const qc = useQueryClient();
@@ -136,33 +206,6 @@ function ResultView({
 
   return (
     <Stack>
-      <SimpleGrid cols={{ base: 2, sm: 3, md: 5 }}>
-        <Card withBorder>
-          <Text size="xs" c="dimmed">Wohnfläche gesamt</Text>
-          <Text fw={700}>{fmt(data.total_wf, 2)} m²</Text>
-        </Card>
-        <Card withBorder>
-          <Text size="xs" c="dimmed">Nutzfläche gesamt</Text>
-          <Text fw={700}>{fmt(data.total_nf, 2)} m²</Text>
-        </Card>
-        <Card withBorder>
-          <Text size="xs" c="dimmed">Tage im Jahr</Text>
-          <Text fw={700}>{data.days_in_year}</Text>
-        </Card>
-        {data.water_price_per_m3 != null && (
-          <Card withBorder>
-            <Text size="xs" c="dimmed">Wasserpreis</Text>
-            <Text fw={700}>{fmt(data.water_price_per_m3, 4)} €/m³</Text>
-          </Card>
-        )}
-        {data.water && (
-          <Card withBorder>
-            <Text size="xs" c="dimmed">Gesamtverbrauch Wasser</Text>
-            <Text fw={700}>{fmt(data.water.total_consumption, 2)} m³</Text>
-          </Card>
-        )}
-      </SimpleGrid>
-
       {data.warnings.length > 0 && (
         <Alert color="orange" title="Hinweise">
           {data.warnings.map((w, i) => (
@@ -173,55 +216,16 @@ function ResultView({
         </Alert>
       )}
 
-      <Title order={4}>Kostenarten (Gesamtkosten des Hauses)</Title>
-      <Table striped highlightOnHover>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Kostenart</Table.Th>
-            <Table.Th>Umlageschlüssel</Table.Th>
-            <Table.Th>Gesamtkosten (Jahr)</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {data.category_lines.map((c) => (
-            <Table.Tr key={c.code}>
-              <Table.Td>{c.name}</Table.Td>
-              <Table.Td>{KEY_LABEL[c.allocation_key] ?? c.allocation_key}</Table.Td>
-              <Table.Td>{fmt(c.year_cost, 2)} €</Table.Td>
-            </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </Table>
-
-      <Title order={4}>Mieter</Title>
-      <Table striped highlightOnHover>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Mieter</Table.Th>
-            <Table.Th>Einheit</Table.Th>
-            <Table.Th>Tage</Table.Th>
-            <Table.Th>Faktor</Table.Th>
-            <Table.Th>Nebenkosten</Table.Th>
-            <Table.Th>Vorauszahlung</Table.Th>
-            <Table.Th>Saldo</Table.Th>
-            <Table.Th></Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {data.tenant_lines.map((t) => (
-            <Table.Tr key={t.tenant_id}>
-              <Table.Td>{t.name}</Table.Td>
-              <Table.Td>{t.designation}</Table.Td>
-              <Table.Td>{t.tenant_days}</Table.Td>
-              <Table.Td>{fmt(t.time_factor, 4)}</Table.Td>
-              <Table.Td>{fmt(t.total_costs, 2)} €</Table.Td>
-              <Table.Td>{fmt(t.advance_total, 2)} €</Table.Td>
-              <Table.Td>
-                <Badge color={t.saldo >= 0 ? "red" : "green"}>
-                  {t.saldo >= 0 ? "Nachzahlung" : "Gutschrift"} {fmt(t.saldo, 2)} €
-                </Badge>
-              </Table.Td>
-              <Table.Td>
+      <Title order={4}>Mieterabrechnungen</Title>
+      <Accordion multiple value={open} onChange={onOpenChange}>
+        {data.tenant_lines.map((t) => (
+          <Accordion.Item key={t.tenant_id} value={String(t.tenant_id)}>
+            <Accordion.Control>
+              {t.name} – {street || data.property_name} – Abrechnung für den Zeitraum{" "}
+              {fmtPeriod(t.period_start, year)} – {fmtPeriod(t.period_end, year, true)}
+            </Accordion.Control>
+            <Accordion.Panel>
+              <Group justify="flex-end" mb="xs">
                 <Button
                   size="compact-xs"
                   variant="outline"
@@ -231,33 +235,78 @@ function ResultView({
                 >
                   PDF
                 </Button>
-              </Table.Td>
-            </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </Table>
-
-      <Accordion>
-        {data.tenant_lines.map((t) => (
-          <Accordion.Item key={t.tenant_id} value={String(t.tenant_id)}>
-            <Accordion.Control>{t.name} – Detail</Accordion.Control>
-            <Accordion.Panel>
-              <Table>
+              </Group>
+              <Table withColumnBorders>
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Kostenart</Table.Th>
-                    <Table.Th>Betrag</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {Object.entries(t.breakdown).map(([code, amount]) => (
-                    <Table.Tr key={code}>
-                      <Table.Td>{code}</Table.Td>
-                      <Table.Td>{fmt(amount, 2)} €</Table.Td>
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
+                    <Table.Th ta="right">Gesamtkosten</Table.Th>
+                <Table.Th>verteilt nach</Table.Th>
+                <Table.Th ta="right">Gesamt</Table.Th>
+                <Table.Th ta="right">Ihr Anteil</Table.Th>
+                <Table.Th>Tage</Table.Th>
+                <Table.Th ta="right">Ihr Kostenanteil</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {t.details.map((d) => (
+                <Table.Tr key={d.code}>
+                  <Table.Td>{d.name}</Table.Td>
+                  <Table.Td ta="right">{fmt(d.year_cost)} €</Table.Td>
+                  <Table.Td>{d.basis_label}</Table.Td>
+                  <Table.Td ta="right">
+                    {d.basis_total != null ? fmtNoRound(d.basis_total) : "—"}
+                  </Table.Td>
+                  <Table.Td ta="right">
+                    {d.basis_share != null ? fmtNoRound(d.basis_share) : "—"}
+                  </Table.Td>
+                  <Table.Td>
+                    {d.days} von {data.days_in_year}
+                  </Table.Td>
+                  <Table.Td ta="right">{fmt(d.amount)} €</Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+            <Table.Tfoot>
+              <Table.Tr style={{ background: "#f1f3f5" }}>
+                <Table.Td fw={700} colSpan={6}>
+                  Ihre Gesamtkosten
+                </Table.Td>
+                <Table.Td ta="right" fw={700}>
+                  {fmt(t.total_costs)} €
+                </Table.Td>
+              </Table.Tr>
+              <Table.Tr style={{ background: "#f1f3f5" }}>
+                <Table.Td colSpan={6}>Ihre Nebenkosten Vorauszahlungen</Table.Td>
+                <Table.Td ta="right">
+                  <Tooltip
+                    multiline
+                    withArrow
+                    w={300}
+                    label={t.advance_breakdown
+                      .map(
+                        (s) =>
+                          `${fmtPeriod(s.valid_from, year)} – ${fmtPeriod(s.valid_to, year, true)}: ` +
+                          `${fmt(s.amount)} €/Monat (${fmtNoRound(s.months)} Monate)`,
+                      )
+                      .join("\n")}
+                  >
+                    <span style={{ cursor: "help", borderBottom: "1px dashed #868e96" }}>
+                      {fmt(t.advance_total, 2)} €
+                    </span>
+                  </Tooltip>
+                </Table.Td>
+              </Table.Tr>
+              <Table.Tr style={{ background: "#f1f3f5" }}>
+                <Table.Td fw={700} colSpan={6}>
+                  {t.saldo >= 0 ? "Nachzahlung" : "Gutschrift"}
+                </Table.Td>
+                <Table.Td ta="right" fw={700}>
+                  {fmt(Math.abs(t.saldo))} €
+                </Table.Td>
+              </Table.Tr>
+            </Table.Tfoot>
+          </Table>
             </Accordion.Panel>
           </Accordion.Item>
         ))}
@@ -274,6 +323,80 @@ function ResultView({
           Abrechnung finalisieren
         </Button>
       </Group>
+    </Stack>
+  );
+}
+
+// Kompakte Ansicht des finalisierten Snapshots (unveränderlicher Stand zum Zeitpunkt
+// der Finalisierung) – zum Vergleich mit der live berechneten Abrechnung.
+function FinalizedView({
+  data,
+  street,
+  open,
+  onOpenChange,
+}: {
+  data: FinalizedResult;
+  street: string;
+  open: string[];
+  onOpenChange: (value: string[]) => void;
+}) {
+  const fmtDate = (iso: string | null): string => {
+    if (!iso) return "–";
+    const [y, m, d] = iso.slice(0, 10).split("-");
+    return `${d}.${m}.${y}`;
+  };
+
+  return (
+    <Stack>
+      <Text size="sm" c="dimmed">
+        Finalisiert am {fmtDate(data.computed_at)} – dieser Stand bleibt unverändert, auch
+        wenn die Daten später angepasst werden. Zum Vergleich: Live-Ansicht aktivieren.
+      </Text>
+      <Accordion multiple value={open} onChange={onOpenChange}>
+        {data.tenant_lines.map((t) => (
+          <Accordion.Item key={t.tenant_id} value={String(t.tenant_id)}>
+            <Accordion.Control>
+              {t.name} – {street || data.property_name} – {t.tenant_days} Tage
+            </Accordion.Control>
+            <Accordion.Panel>
+              <Table withColumnBorders>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Kostenart</Table.Th>
+                    <Table.Th ta="right">Ihr Kostenanteil</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {Object.entries(t.breakdown).map(([code, amount]) => (
+                    <Table.Tr key={code}>
+                      <Table.Td>{data.category_names[code] ?? code}</Table.Td>
+                      <Table.Td ta="right">{fmt(amount)} €</Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+                <Table.Tfoot>
+                  <Table.Tr style={{ background: "#f1f3f5" }}>
+                    <Table.Td fw={700}>Ihre Gesamtkosten</Table.Td>
+                    <Table.Td ta="right" fw={700}>
+                      {fmt(t.total_costs)} €
+                    </Table.Td>
+                  </Table.Tr>
+                  <Table.Tr style={{ background: "#f1f3f5" }}>
+                    <Table.Td>Ihre Nebenkosten Vorauszahlungen</Table.Td>
+                    <Table.Td ta="right">{fmt(t.advance_total)} €</Table.Td>
+                  </Table.Tr>
+                  <Table.Tr style={{ background: "#f1f3f5" }}>
+                    <Table.Td fw={700}>{t.saldo >= 0 ? "Nachzahlung" : "Gutschrift"}</Table.Td>
+                    <Table.Td ta="right" fw={700}>
+                      {fmt(Math.abs(t.saldo))} €
+                    </Table.Td>
+                  </Table.Tr>
+                </Table.Tfoot>
+              </Table>
+            </Accordion.Panel>
+          </Accordion.Item>
+        ))}
+      </Accordion>
     </Stack>
   );
 }

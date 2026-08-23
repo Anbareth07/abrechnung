@@ -23,6 +23,15 @@ class Invoice(Base):
     cost_category_id: Mapped[int] = mapped_column(
         ForeignKey("cost_categories.id", ondelete="RESTRICT"), nullable=False, index=True
     )
+    # Rechnungsart (Grundsteuer, Wasser, …) – steuert Eingabelayout & Verteilung
+    kind: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    # Grundsteuer (wiederkehrend): gültig ab Bescheid + Jahresbetrag
+    valid_from: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    annual_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
+    # Schornsteinfeger o. ä.: optional auf eine einzelne Wohneinheit bezogen
+    lease_unit_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("lease_units.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     invoice_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     supplier: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -34,6 +43,7 @@ class Invoice(Base):
 
     prop: Mapped["Property"] = relationship(back_populates="invoices")
     cost_category: Mapped["CostCategory"] = relationship(back_populates="invoices")
+    lease_unit: Mapped[Optional["LeaseUnit"]] = relationship()
     items: Mapped[List["InvoiceItem"]] = relationship(
         back_populates="invoice",
         cascade="all, delete-orphan",

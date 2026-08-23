@@ -54,6 +54,13 @@ const ALLOCATION_KEYS = [
 const ok = (msg: string) => notifications.show({ message: msg, color: "green" });
 const err = () => notifications.show({ message: "Fehler beim Speichern", color: "red" });
 
+// Vorauszahlungsänderungen nur zum Monatsanfang: Datum auf den 1. des Monats setzen
+const monthStart = (iso: string): string => {
+  if (!iso) return iso;
+  const [y, m] = iso.split("-");
+  return `${y}-${m}-01`;
+};
+
 export default function StammdatenPage() {
   return (
     <Stack>
@@ -414,8 +421,14 @@ export function TenantsTab() {
     });
     setOpen(true);
   };
-  const setAdvance = (idx: number, patch: Partial<{ valid_from: string; amount: string }>) =>
-    setForm((f) => ({ ...f, advances: f.advances.map((a, i) => (i === idx ? { ...a, ...patch } : a)) }));
+  const setAdvance = (idx: number, patch: Partial<{ valid_from: string; amount: string }>) => {
+    // Änderungen der Vorauszahlung (weitere Zeiträume) nur zum Monatsanfang zulässig
+    const next =
+      patch.valid_from !== undefined && idx > 0
+        ? { ...patch, valid_from: monthStart(patch.valid_from) }
+        : patch;
+    setForm((f) => ({ ...f, advances: f.advances.map((a, i) => (i === idx ? { ...a, ...next } : a)) }));
+  };
   const addAdvance = () => setForm((f) => ({ ...f, advances: [...f.advances, { valid_from: "", amount: "" }] }));
   const removeAdvance = (idx: number) =>
     setForm((f) => ({ ...f, advances: f.advances.filter((_, i) => i !== idx) }));
@@ -657,6 +670,10 @@ export function TenantsTab() {
           <Button variant="light" onClick={addAdvance}>
             + Zeitraum hinzufügen
           </Button>
+          <Text size="xs" c="dimmed">
+            Änderungen der Vorauszahlung (weitere Zeiträume) sind nur zum Monatsanfang (1. des
+            Monats) möglich.
+          </Text>
 
           <Title order={6}>Monatliche Kosten (z. B. Kaltmiete, Heizkosten – nicht umlagefähig)</Title>
           {form.monthly_costs.map((c, idx) => (

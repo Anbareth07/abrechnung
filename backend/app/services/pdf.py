@@ -8,13 +8,12 @@ from io import BytesIO
 from typing import Optional
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import (
     Paragraph,
     SimpleDocTemplate,
-    Spacer,
     Table,
     TableStyle,
 )
@@ -58,9 +57,10 @@ def generate_tenant_pdf(session, property_id: int, year: int, tenant_id: int) ->
         )
 
     buffer = BytesIO()
+    # Querformat (Tabelle ist breit); das PDF enthält nur die Tabelle.
     doc = SimpleDocTemplate(
         buffer,
-        pagesize=A4,
+        pagesize=landscape(A4),
         leftMargin=18 * mm,
         rightMargin=18 * mm,
         topMargin=16 * mm,
@@ -69,40 +69,16 @@ def generate_tenant_pdf(session, property_id: int, year: int, tenant_id: int) ->
     )
 
     styles = getSampleStyleSheet()
-    h1 = ParagraphStyle("h1", parent=styles["Heading1"], fontSize=16, spaceAfter=4)
-    h2 = ParagraphStyle("h2", parent=styles["Heading2"], fontSize=11, spaceAfter=2)
-    normal = ParagraphStyle("normal", parent=styles["Normal"], fontSize=9, leading=12)
-    small = ParagraphStyle("small", parent=styles["Normal"], fontSize=8, leading=10, textColor=colors.grey)
-
-    story = []
-    story.append(Paragraph(f"Nebenkostenabrechnung {year}", h1))
-    story.append(Paragraph(f"{result.property_name} · {tenant.name}", h2))
-    story.append(Spacer(1, 4 * mm))
-
-    info_rows = [
-        [Paragraph("<b>Objekt</b>", normal), result.property_name],
-        [Paragraph("<b>Mieter</b>", normal), tenant.name],
-        [Paragraph("<b>Mieteinheit</b>", normal), line.designation],
-        [Paragraph("<b>Abrechnungszeitraum</b>", normal), f"{ys.isoformat()} – {ye.isoformat()}"],
-        [Paragraph("<b>Miet-Tage</b>", normal), f"{line.tenant_days} von {result.days_in_year}"],
-        [Paragraph("<b>Zeitfaktor</b>", normal), _g(line.time_factor, 4)],
-    ]
-    if result.water_price_per_m3 is not None:
-        info_rows.append([Paragraph("<b>Wasserpreis</b>", normal), f"{_g(result.water_price_per_m3, 4)} €/m³"])
-    if result.water is not None:
-        info_rows.append([Paragraph("<b>Gesamtverbrauch Wasser</b>", normal), f"{_g(result.water.total_consumption, 2)} m³"])
-
-    info = Table(info_rows, colWidths=[42 * mm, 132 * mm])
-    info.setStyle(
-        TableStyle(
-            [
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-            ]
-        )
+    title_style = ParagraphStyle(
+        "title", parent=styles["Normal"], fontSize=12, leading=16, spaceAfter=8
     )
-    story.append(info)
-    story.append(Spacer(1, 5 * mm))
+    story = [
+        Paragraph(
+            f"{tenant.name} – {result.property_name} – Abrechnung für den Zeitraum "
+            f"{occ_start.strftime('%d.%m')} – {occ_end.strftime('%d.%m.%Y')}",
+            title_style,
+        )
+    ]
 
     headers = [
         "Kostenart",
@@ -164,7 +140,7 @@ def generate_tenant_pdf(session, property_id: int, year: int, tenant_id: int) ->
         rows.append(["Gutschrift", "", "", "", "", "", _g(-line.saldo)])
 
     table_data = [headers, *rows]
-    table = Table(table_data, colWidths=[44 * mm, 26 * mm, 20 * mm, 22 * mm, 20 * mm, 12 * mm, 30 * mm], repeatRows=1)
+    table = Table(table_data, colWidths=[66 * mm, 30 * mm, 30 * mm, 30 * mm, 30 * mm, 24 * mm, 36 * mm], repeatRows=1)
     table.setStyle(
         TableStyle(
             [
@@ -183,9 +159,5 @@ def generate_tenant_pdf(session, property_id: int, year: int, tenant_id: int) ->
             ]
         )
     )
-    story.append(table)
-    story.append(Spacer(1, 4 * mm))
-    story.append(Paragraph("Beträge in EUR (brutto).", small))
-
-    doc.build(story)
+    doc.build([*story, table])
     return buffer.getvalue()

@@ -110,20 +110,18 @@ def test_reference_2013_water(session):
     mieter_e = next(ln for ln in result.tenant_lines if ln.name == "Mieter E")
 
     # Individueller Verbrauch ohne Zeitfaktor
-    assert mieter_a.breakdown["WASSER_VERBRAUCH"] == engine_mod.money(Decimal("37") * expected_price)
-    assert mieter_d.breakdown["WASSER_VERBRAUCH"] == engine_mod.money(Decimal("60") * expected_price)
-    assert mieter_e.breakdown["WASSER_VERBRAUCH"] == engine_mod.money(Decimal("39") * expected_price)
+    assert mieter_a.breakdown["WASSER_VERBRAUCH"] == Decimal("37") * expected_price
+    assert mieter_d.breakdown["WASSER_VERBRAUCH"] == Decimal("60") * expected_price
+    assert mieter_e.breakdown["WASSER_VERBRAUCH"] == Decimal("39") * expected_price
 
     # Gartenwasser nach Wohnfläche
     garden_cost = Decimal("2") * expected_price
-    assert mieter_a.breakdown["WASSER_GARTEN"] == engine_mod.money(garden_cost * Decimal("76") / Decimal("206"))
+    assert mieter_a.breakdown["WASSER_GARTEN"] == garden_cost * (Decimal("76") / Decimal("206"))
 
     # Flächenumlagen: Mieter A NF-Anteil = 76/218, WF-Anteil = 76/206
-    assert mieter_a.breakdown["grundsteuer"] == engine_mod.money(Decimal("155.45") * Decimal("76") / Decimal("218"))
-    assert mieter_a.breakdown["gartenpflege"] == engine_mod.money(Decimal("103.00") * Decimal("76") / Decimal("206"))
-    assert mieter_a.breakdown["gebaeudeversicherung"] == engine_mod.money(
-        Decimal("272.05") * Decimal("76") / Decimal("218")
-    )
+    assert mieter_a.breakdown["grundsteuer"] == Decimal("155.45") * (Decimal("76") / Decimal("218"))
+    assert mieter_a.breakdown["gartenpflege"] == Decimal("103.00") * (Decimal("76") / Decimal("206"))
+    assert mieter_a.breakdown["gebaeudeversicherung"] == Decimal("272.05") * (Decimal("76") / Decimal("218"))
 
     # Keine Restsumme, da Verbrauch exakt auf die Mieter + Garten aufgeht
     assert result.unallocated_water == Decimal("0")

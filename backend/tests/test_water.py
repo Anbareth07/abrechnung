@@ -94,17 +94,17 @@ def test_water_calculation(session):
     mieter_c = next(ln for ln in result.tenant_lines if ln.name == "Mieter C")
 
     # Individueller Verbrauch ohne Zeitfaktor
-    assert mieter_a.breakdown["WASSER_VERBRAUCH"] == engine_mod.money(Decimal("56") * expected_price)
-    assert mieter_b.breakdown["WASSER_VERBRAUCH"] == engine_mod.money(Decimal("55") * expected_price)
-    assert mieter_c.breakdown["WASSER_VERBRAUCH"] == engine_mod.money(Decimal("45") * expected_price)
+    assert mieter_a.breakdown["WASSER_VERBRAUCH"] == Decimal("56") * expected_price
+    assert mieter_b.breakdown["WASSER_VERBRAUCH"] == Decimal("55") * expected_price
+    assert mieter_c.breakdown["WASSER_VERBRAUCH"] == Decimal("45") * expected_price
 
     # Gartenwasser wird nach Wohnfläche umgelegt
     garden_cost = Decimal("60") * expected_price
-    assert mieter_a.breakdown["WASSER_GARTEN"] == engine_mod.money(garden_cost * Decimal("76") / Decimal("206"))
-    assert mieter_b.breakdown["WASSER_GARTEN"] == engine_mod.money(garden_cost * Decimal("65") / Decimal("206"))
+    assert mieter_a.breakdown["WASSER_GARTEN"] == garden_cost * (Decimal("76") / Decimal("206"))
+    assert mieter_b.breakdown["WASSER_GARTEN"] == garden_cost * (Decimal("65") / Decimal("206"))
 
     # Grundsteuer (NF): Mieter A 80/218 von 2180
-    assert mieter_a.breakdown["grundsteuer"] == engine_mod.money(Decimal("2180") * Decimal("80") / Decimal("218"))
+    assert mieter_a.breakdown["grundsteuer"] == Decimal("2180") * Decimal("80") / Decimal("218")
 
 
 def test_water_individual_no_time_factor_for_partial_tenant(session):
@@ -127,7 +127,7 @@ def test_water_individual_no_time_factor_for_partial_tenant(session):
     trink_pro_rata = Decimal("1000") * Decimal(181) / Decimal(365)
     water_total = trink_pro_rata + Decimal("500")
     expected_price = water_total / Decimal("216")
-    assert line.breakdown["WASSER_VERBRAUCH"] == engine_mod.money(Decimal("55") * expected_price)
+    assert line.breakdown["WASSER_VERBRAUCH"] == Decimal("55") * expected_price
 
     # Hinweis auf fehlenden Zählerstand zu Ein-/Auszug wird ausgegeben.
     assert any("Mieter B" in w for w in result.warnings)

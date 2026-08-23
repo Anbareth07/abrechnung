@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LeaseUnit, MonthlyCost, Property, Tenant } from "../api/types";
@@ -132,6 +132,26 @@ describe("TenantsTab", () => {
     const rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
     expect(rows[0]).toHaveTextContent("Neu");
     expect(rows[1]).toHaveTextContent("Alt");
+  });
+
+  it("setzt Vorauszahlungsänderungen automatisch auf den Monatsanfang", async () => {
+    const user = userEvent.setup();
+    state.properties = [prop(1, "Objekt 1")];
+    state.units = [unit(1, 1, "Wohnung 1")];
+    state.tenants = [tenant(1, 1, "Bauer")];
+    renderTab();
+
+    await user.click(screen.getByRole("button", { name: "Ändern" }));
+    await screen.findByRole("button", { name: "Speichern" });
+
+    // 2. Vorauszahlungs-Zeitraum hinzufügen
+    await user.click(screen.getByRole("button", { name: "+ Zeitraum hinzufügen" }));
+    const inputs = screen.getAllByLabelText("Gültig ab");
+    expect(inputs.length).toBe(2);
+
+    // Mitte des Monats eintragen → wird auf den 1. des Monats gesetzt
+    fireEvent.change(inputs[1], { target: { value: "2025-10-15" } });
+    expect(inputs[1]).toHaveValue("2025-10-01");
   });
 
   it("blendet ausgezogene Mieter per Checkbox aus und aktualisiert die Anzahl", async () => {

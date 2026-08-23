@@ -55,22 +55,22 @@ def test_area_allocation_and_time_factor(session):
 
     # Grundsteuer (NF 60 je Einheit von 120): Volljahr 600, Halbjahr 600*factor
     assert volljahr.breakdown["grundsteuer"] == Decimal("600.00")
-    assert halbjahr.breakdown["grundsteuer"] == engine_mod.money(Decimal("600") * factor)
+    assert halbjahr.breakdown["grundsteuer"] == Decimal("600") * factor
 
     # Gartenpflege (WF 50 je Einheit von 100): Volljahr 300, Halbjahr 300*factor
     assert volljahr.breakdown["gartenpflege"] == Decimal("300.00")
-    assert halbjahr.breakdown["gartenpflege"] == engine_mod.money(Decimal("300") * factor)
+    assert halbjahr.breakdown["gartenpflege"] == Decimal("300") * factor
 
     # Saldo: Kosten − Vorauszahlung × (Tage/365 × 12)
     expected_total = Decimal("600") + Decimal("300")
     assert volljahr.total_costs == expected_total
     assert volljahr.advance_total == Decimal("1200.00")
-    assert volljahr.saldo == engine_mod.money(expected_total - Decimal("1200"))
+    assert volljahr.saldo == expected_total - Decimal("1200")
 
-    halb_total = engine_mod.money(Decimal("600") * factor) + engine_mod.money(Decimal("300") * factor)
-    halb_advance = engine_mod.money(Decimal("100") * factor * Decimal(12))
+    halb_total = Decimal("600") * factor + Decimal("300") * factor
+    halb_advance = Decimal("600")  # 01.07.–31.12. = 6 Monate × 100
     assert halbjahr.advance_total == halb_advance
-    assert halbjahr.saldo == engine_mod.money(halb_total - halb_advance)
+    assert halbjahr.saldo == halb_total - halb_advance
 
 
 def test_wohnung_allocation_equal_split(session):
@@ -99,7 +99,7 @@ def test_wohnung_allocation_equal_split(session):
     # 2 belegte Wohnungen → je 600 €, unabhängig von der Fläche; zeitanteilig beim Halbjahr
     assert volljahr.breakdown["wohnungskosten"] == Decimal("600.00")
     factor = Decimal(184) / Decimal(365)
-    assert halbjahr.breakdown["wohnungskosten"] == engine_mod.money(Decimal("600") * factor)
+    assert halbjahr.breakdown["wohnungskosten"] == Decimal("600") * factor
 
 
 def test_move_out_handling(session):
@@ -129,8 +129,8 @@ def test_advance_periods_pro_rata(session):
     result = engine_mod.compute_settlement(session, prop.id, 2026)
     line = next(ln for ln in result.tenant_lines if ln.name == "Volljahr")
 
-    # 2026: 01.01–30.06 = 181 Tage à 100 €, 01.07–31.12 = 184 Tage à 180 €
-    expected = (Decimal(181) * Decimal("100") + Decimal(184) * Decimal("180")) * Decimal(12) / Decimal(365)
+    # 2026: 01.01–30.06 = 6 Monate à 100 €, 01.07–31.12 = 6 Monate à 180 €
+    expected = Decimal("100") * 6 + Decimal("180") * 6
     assert line.advance_total == engine_mod.money(expected)
 
     # Saldo berücksichtigt die neue Vorauszahlung

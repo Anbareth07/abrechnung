@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import models
+from ..models.enums import InvoiceKind
 from . import prorata
 from .prorata import year_bounds
 from .water import WATER_METER_TYPES
@@ -36,15 +37,24 @@ def check_completeness(session: Session, property_id: int, year: int) -> list[Mi
         select(models.Invoice).where(models.Invoice.property_id == property_id)
     ).scalars().all()
     items_by_cat: dict[int, list[models.InvoiceItem]] = {}
+    # Kostenarten, die durch eine wiederkehrende Rechnung (Grundsteuer mit gültig ab +
+    # Jahresbetrag, ohne Positionen) im Jahr abgedeckt sind.
+    recurring_cats: set[int] = set()
     for inv in invoices:
         for item in inv.items:
             items_by_cat.setdefault(inv.cost_category_id, []).append(item)
+        if (
+            inv.kind == InvoiceKind.GRUNDSTEUER.value
+            and inv.valid_from is not None
+            and inv.valid_from <= ye
+        ):
+            recurring_cats.add(inv.cost_category_id)
 
     for cfg in configs:
         if cfg.allocation_key == models.AllocationKey.NONE:
             continue
         cat = cfg.cost_category
-        has_overlap = any(
+        has_overlap = cat.id in recurring_cats or any(
             prorata.overlap_days(item.from_date, item.to_date, ys, ye) > 0
             for item in items_by_cat.get(cat.id, [])
         )
