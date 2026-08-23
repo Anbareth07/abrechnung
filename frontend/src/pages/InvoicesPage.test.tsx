@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AllocationConfig, CostCategory, Invoice, LeaseUnit, Property } from "../api/types";
+import { ObjectProvider } from "../context/ObjectContext";
 import InvoicesPage from "./InvoicesPage";
 
 // Mantine-Select/NumberInput durch native Elemente ersetzen (jsdom-unzuverlässig)
@@ -83,7 +84,9 @@ const renderPage = () => {
   render(
     <QueryClientProvider client={qc}>
       <MantineProvider>
-        <InvoicesPage />
+        <ObjectProvider>
+          <InvoicesPage />
+        </ObjectProvider>
       </MantineProvider>
     </QueryClientProvider>,
   );
@@ -96,6 +99,7 @@ const openNew = async (user: ReturnType<typeof userEvent.setup>) => {
 
 describe("InvoicesPage generische Rechnung", () => {
   beforeEach(() => {
+    localStorage.removeItem("abrechnung.selectedObject");
     state.properties = [{ id: 3, name: "Testobjekt", street: "", zip_code: "", city: "" }];
     state.cats = [
       { id: 10, property_id: 3, code: "grundsteuer", name: "Grundsteuer", default_allocation_key: "NF", is_active: true },

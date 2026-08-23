@@ -16,6 +16,7 @@ import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { API_URL, api, fmt, num } from "../api/client";
 import { useTestData } from "../context/TestDataContext";
+import { useObject } from "../context/ObjectContext";
 import { useCrud } from "../hooks/useCrud";
 import { visibleProperties } from "../utils/testData";
 import type { FinalizedResult, MissingItem, Property, SettlementResult } from "../api/types";
@@ -45,7 +46,7 @@ const YEARS = Array.from({ length: CURRENT_YEAR + 3 - 2025 + 1 }, (_, i) => Stri
 export default function SettlementPage() {
   const props = useCrud<Property>("/properties", "properties");
   const { hideTest } = useTestData();
-  const [propertyId, setPropertyId] = useState<string | null>(null);
+  const { propertyFilter: propertyId, setPropertyFilter: setPropertyId } = useObject();
   const [year, setYear] = useState<string>(String(DEFAULT_YEAR));
 
   const result = useQuery({

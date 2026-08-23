@@ -8,6 +8,7 @@ from .api import (
     meters,
     properties,
     settlements,
+    strom,
     techem,
     tenants,
 )
@@ -31,6 +32,7 @@ app.include_router(invoices.router)
 app.include_router(meters.router)
 app.include_router(meters.reading_router)
 app.include_router(techem.router)
+app.include_router(strom.router)
 app.include_router(settlements.router)
 
 

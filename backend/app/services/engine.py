@@ -12,8 +12,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import models
-from ..models.enums import InvoiceKind
+from ..models.enums import AllocationKey, InvoiceKind
 from . import prorata
+from . import strom as strom_service
 from .prorata import ZERO, days_in_year, pro_rata_amount, year_bounds
 from .water import WaterResult, compute_water_consumption, unit_water_consumption
 
@@ -225,6 +226,15 @@ def _category_year_cost(invoices: list, year: int) -> Decimal:
     return total
 
 
+def _append_strom_line(category_lines: list, configs: list, strom_brutto: Decimal) -> None:
+    """Eigene 'Strom'-Zeile (Umlageschlüssel einer 'Strom'-Kostenart, sonst Wohnfläche)."""
+    strom_cfg = next(
+        (c for c in configs if (c.cost_category.name or "").strip().lower() == "strom"), None
+    )
+    strom_key = strom_cfg.allocation_key.value if strom_cfg else AllocationKey.WF.value
+    category_lines.append(CategoryLine("STROM", "Strom", strom_key, strom_brutto))
+
+
 def compute_settlement(session: Session, property_id: int, year: int) -> SettlementResult:
     """Berechnet die komplette Nebenkostenabrechnung für ein Objekt und Jahr."""
     prop = session.get(models.Property, property_id)
@@ -291,6 +301,32 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
         category_lines.append(CategoryLine(cat.code, cat.name, cfg.allocation_key.value, year_cost))
         if cfg.allocation_key == models.AllocationKey.CONSUMPTION:
             water_configured = True
+
+    # Strom (falls Zählerstände vorhanden) als Kostenstelle in die Abrechnung aufnehmen.
+    # Verteilung nach dem Umlageschlüssel einer konfigurierten "Strom"-Kostenart, sonst Wohnfläche.
+    try:
+        strom_res = strom_service.berechnung(session, property_id, ys, ye)
+    except ValueError:
+        strom_res = None
+    if strom_res is not None and strom_res.get("hauptzaehler") is not None:
+        strom_brutto = Decimal(str(strom_res["summen"]["brutto"]))
+        # Zuordnung Strom → Abrechnung (je Objekt im Strom-Modul):
+        #   0   → eigene Zeile "Strom"
+        #   leer→ nicht in der Abrechnung (keine automatische neue Kostenstelle)
+        #   >0  → in bestehende Kostenstelle einrechnen (z. B. "Hausbeleuchtung")
+        if prop.strom_allocation_category_id == 0:
+            _append_strom_line(category_lines, configs, strom_brutto)
+        elif prop.strom_allocation_category_id is not None:
+            target_code = category_code_by_id.get(prop.strom_allocation_category_id)
+            merged = False
+            for cl in category_lines:
+                if cl.code == target_code:
+                    cl.year_cost += strom_brutto
+                    merged = True
+                    break
+            if not merged:
+                # Kostenstelle ohne Umlage-Zeile → eigene "Strom"-Zeile als Fallback
+                _append_strom_line(category_lines, configs, strom_brutto)
 
     water_total_cost = sum(
         (cl.year_cost for cl in category_lines if cl.allocation_key == "CONSUMPTION"), ZERO

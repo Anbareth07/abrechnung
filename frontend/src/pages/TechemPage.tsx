@@ -15,6 +15,7 @@ import { notifications } from "@mantine/notifications";
 import { fmt } from "../api/client";
 import { ConfirmDeleteModal } from "../components/ConfirmDeleteModal";
 import { useTestData } from "../context/TestDataContext";
+import { useObject } from "../context/ObjectContext";
 import { useCrud } from "../hooks/useCrud";
 import { testPropertyIds, visibleProperties } from "../utils/testData";
 import type { Property, TechemRecord } from "../api/types";
@@ -31,7 +32,7 @@ export default function TechemPage() {
   const { list, create, update, remove } = useCrud<TechemRecord>("/techem", "techem");
   const props = useCrud<Property>("/properties", "properties");
   const { hideTest } = useTestData();
-  const [propertyFilter, setPropertyFilter] = useState<string | null>(null);
+  const { propertyFilter, setPropertyFilter } = useObject();
 
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<TechemRecord | null>(null);

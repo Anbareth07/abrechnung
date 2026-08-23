@@ -17,6 +17,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import { ConfirmDeleteModal } from "../components/ConfirmDeleteModal";
 import { useTestData } from "../context/TestDataContext";
+import { useObject } from "../context/ObjectContext";
 import { useCrud } from "../hooks/useCrud";
 import { testPropertyIds, visibleProperties } from "../utils/testData";
 import type { AllocationConfig, CostCategory, Invoice, LeaseUnit, Property } from "../api/types";
@@ -47,7 +48,7 @@ export default function InvoicesPage() {
   const units = useCrud<LeaseUnit>("/lease-units", "lease-units");
   const configs = useCrud<AllocationConfig>("/allocation-configs", "allocation-configs");
   const { hideTest } = useTestData();
-  const [propertyFilter, setPropertyFilter] = useState<string | null>(null);
+  const { propertyFilter, setPropertyFilter } = useObject();
   const [yearFilter, setYearFilter] = useState<string | null>(null);
 
   const [open, setOpen] = useState(false);

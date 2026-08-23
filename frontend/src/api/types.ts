@@ -7,6 +7,7 @@ export interface Property {
   zip_code: string;
   city: string;
   is_test?: boolean;
+  strom_allocation_category_id?: number | null;
   created_at?: string;
 }
 
@@ -224,3 +225,51 @@ export interface FinalizedResult {
   category_names: Record<string, string>;
   tenant_lines: FinalizedTenantLine[];
 }
+
+export interface StromPrice {
+  id: number;
+  property_id: number;
+  kind: string; // GRUNDGEBUEHR | ARBEITSPREIS | STROMSTEUER
+  valid_from: string;
+  valid_to: string;
+  amount: number;
+  vat_rate: number;
+}
+
+export interface StromReading {
+  id: number;
+  property_id: number;
+  role: string; // HAUPTZAEHLER | UNTERZAEHLER
+  reading_date: string;
+  value: number;
+}
+
+export interface StromMeterResult {
+  start_reading: number;
+  end_reading: number;
+  consumption: number;
+}
+
+export interface StromPosition {
+  art: string;
+  von: string;
+  bis: string;
+  menge: number;
+  satz: number;
+  vat_rate: number;
+  netto: number;
+  vat: number;
+  brutto: number;
+}
+
+export interface StromBerechnung {
+  property_id: number;
+  von: string;
+  bis: string;
+  hauptzaehler: StromMeterResult | null;
+  unterzaehler: StromMeterResult | null;
+  netto_verbrauch: number;
+  positionen: StromPosition[];
+  summen: { netto: number; vat: number; brutto: number };
+}
+

@@ -1,0 +1,62 @@
+from datetime import date
+from decimal import Decimal
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class StromPriceCreate(BaseModel):
+    property_id: int
+    kind: str  # GRUNDGEBUEHR | ARBEITSPREIS | STROMSTEUER
+    valid_from: date
+    valid_to: date
+    amount: Decimal
+    vat_rate: Decimal = Decimal("19.00")
+
+
+class StromPriceUpdate(BaseModel):
+    kind: Optional[str] = None
+    valid_from: Optional[date] = None
+    valid_to: Optional[date] = None
+    amount: Optional[Decimal] = None
+    vat_rate: Optional[Decimal] = None
+
+
+class StromPriceRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    property_id: int
+    kind: str
+    valid_from: date
+    valid_to: date
+    amount: Decimal
+    vat_rate: Decimal
+
+
+class StromReadingCreate(BaseModel):
+    property_id: int
+    role: str  # HAUPTZAEHLER | UNTERZAEHLER
+    reading_date: date
+    value: Decimal
+
+
+class StromReadingUpdate(BaseModel):
+    role: Optional[str] = None
+    reading_date: Optional[date] = None
+    value: Optional[Decimal] = None
+
+
+class StromReadingRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    property_id: int
+    role: str
+    reading_date: date
+    value: Decimal
+
+
+class TechemUebernehmenRequest(BaseModel):
+    von: date
+    bis: date

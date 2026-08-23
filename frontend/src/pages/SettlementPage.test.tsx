@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FinalizedResult, Property, SettlementResult, TenantLine } from "../api/types";
 import { TestDataProvider } from "../context/TestDataContext";
+import { ObjectProvider } from "../context/ObjectContext";
 import SettlementPage from "./SettlementPage";
 
 // Mantine-Select durch natives <select> ersetzen (Dropdown in jsdom unzuverlässig)
@@ -99,7 +100,9 @@ const renderPage = () => {
     <QueryClientProvider client={qc}>
       <MantineProvider>
         <TestDataProvider>
-          <SettlementPage />
+          <ObjectProvider>
+            <SettlementPage />
+          </ObjectProvider>
         </TestDataProvider>
       </MantineProvider>
     </QueryClientProvider>,
@@ -108,6 +111,7 @@ const renderPage = () => {
 
 describe("SettlementPage", () => {
   beforeEach(() => {
+    localStorage.removeItem("abrechnung.selectedObject");
     vi.clearAllMocks();
     state.properties = [
       { id: 3, name: "Testobjekt", street: "", zip_code: "", city: "" },

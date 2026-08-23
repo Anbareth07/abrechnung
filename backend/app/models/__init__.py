@@ -12,6 +12,7 @@ from .category import CostCategory, AllocationConfig
 from .meter import Meter, MeterReading
 from .invoice import Invoice, InvoiceItem
 from .settlement import Settlement, SettlementLine
+from .strom import StromPrice, StromReading
 from .techem import TechemRecord
 
 __all__ = [
@@ -35,5 +36,7 @@ __all__ = [
     "InvoiceItem",
     "Settlement",
     "SettlementLine",
+    "StromPrice",
+    "StromReading",
     "TechemRecord",
 ]

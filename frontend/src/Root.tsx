@@ -2,16 +2,17 @@ import { AppShell, Burger, Checkbox, Group, NavLink, Title } from "@mantine/core
 import { useDisclosure } from "@mantine/hooks";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useTestData } from "./context/TestDataContext";
+import { ObjectProvider } from "./context/ObjectContext";
 import StammdatenPage from "./pages/StammdatenPage";
 import InvoicesPage from "./pages/InvoicesPage";
-import MetersPage from "./pages/MetersPage";
 import SettlementPage from "./pages/SettlementPage";
+import StromPage from "./pages/StromPage";
 import TechemPage from "./pages/TechemPage";
 
 const links = [
   { path: "/stammdaten", label: "Stammdaten" },
   { path: "/rechnungen", label: "Rechnungen" },
-  { path: "/zaehler", label: "Zähler & Stände" },
+  { path: "/strom", label: "Strom" },
   { path: "/abrechnung", label: "Abrechnung" },
   { path: "/techem", label: "Techem" },
 ];
@@ -54,14 +55,16 @@ export default function Root() {
       </AppShell.Navbar>
 
       <AppShell.Main>
-        <Routes>
-          <Route path="/" element={<Navigate to="/stammdaten" replace />} />
-          <Route path="/stammdaten" element={<StammdatenPage />} />
-          <Route path="/rechnungen" element={<InvoicesPage />} />
-          <Route path="/zaehler" element={<MetersPage />} />
-          <Route path="/abrechnung" element={<SettlementPage />} />
-          <Route path="/techem" element={<TechemPage />} />
-        </Routes>
+        <ObjectProvider>
+          <Routes>
+            <Route path="/" element={<Navigate to="/stammdaten" replace />} />
+            <Route path="/stammdaten" element={<StammdatenPage />} />
+            <Route path="/rechnungen" element={<InvoicesPage />} />
+            <Route path="/strom" element={<StromPage />} />
+            <Route path="/abrechnung" element={<SettlementPage />} />
+            <Route path="/techem" element={<TechemPage />} />
+          </Routes>
+        </ObjectProvider>
       </AppShell.Main>
     </AppShell>
   );

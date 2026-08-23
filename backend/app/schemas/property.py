@@ -14,6 +14,7 @@ class PropertyRead(BaseModel):
     zip_code: str
     city: str
     is_test: bool = False
+    strom_allocation_category_id: Optional[int] = None
     created_at: datetime
 
 
@@ -31,6 +32,7 @@ class PropertyUpdate(BaseModel):
     zip_code: Optional[str] = None
     city: Optional[str] = None
     is_test: Optional[bool] = None
+    strom_allocation_category_id: Optional[int] = None
 
 
 class LeaseUnitRead(BaseModel):

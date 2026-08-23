@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 import sqlalchemy as sa
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Boolean, DateTime, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -21,6 +21,11 @@ class Property(Base):
     zip_code: Mapped[str] = mapped_column(String(10), nullable=False)
     city: Mapped[str] = mapped_column(String(100), nullable=False)
     is_test: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Strom → Abrechnung (im Strom-Modul je Objekt eingestellt):
+    #   0    → eigene Zeile "Strom"
+    #   leer → nicht in der Abrechnung (keine automatische neue Kostenstelle)
+    #   >0   → in bestehende Kostenstelle einrechnen (z. B. "Hausbeleuchtung")
+    strom_allocation_category_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     lease_units: Mapped[List["LeaseUnit"]] = relationship(
@@ -42,5 +47,11 @@ class Property(Base):
         back_populates="prop", cascade="all, delete-orphan"
     )
     techem_records: Mapped[List["TechemRecord"]] = relationship(
+        back_populates="prop", cascade="all, delete-orphan"
+    )
+    strom_prices: Mapped[List["StromPrice"]] = relationship(
+        back_populates="prop", cascade="all, delete-orphan"
+    )
+    strom_readings: Mapped[List["StromReading"]] = relationship(
         back_populates="prop", cascade="all, delete-orphan"
     )
