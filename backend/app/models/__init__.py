@@ -8,7 +8,7 @@ from .enums import (
 )
 from .property import Property
 from .tenant import LeaseUnit, Tenant, AdvancePayment, MonthlyCost
-from .category import CostCategory, AllocationConfig
+from .category import CostCategory, AllocationConfig, CategoryNoInvoice
 from .meter import Meter, MeterReading
 from .invoice import Invoice, InvoiceItem
 from .settlement import Settlement, SettlementLine
@@ -30,6 +30,7 @@ __all__ = [
     "MonthlyCost",
     "CostCategory",
     "AllocationConfig",
+    "CategoryNoInvoice",
     "Meter",
     "MeterReading",
     "Invoice",

@@ -71,3 +71,30 @@ class AllocationConfig(Base):
 
     prop: Mapped["Property"] = relationship(back_populates="allocation_configs")
     cost_category: Mapped["CostCategory"] = relationship(back_populates="allocation_configs")
+
+
+class CategoryNoInvoice(Base):
+    """Kennzeichnung: für eine Kostenart liegt in einem Jahr bewusst keine Rechnung vor.
+
+    Wird im Vollständigkeits-Check als "keine Rechnung in diesem Jahr" berücksichtigt.
+    """
+
+    __tablename__ = "category_no_invoices"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    property_id: Mapped[int] = mapped_column(
+        ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    cost_category_id: Mapped[int] = mapped_column(
+        ForeignKey("cost_categories.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "property_id", "cost_category_id", "year", name="uq_no_invoice_property_cat_year"
+        ),
+    )
+
+    prop: Mapped["Property"] = relationship()
+    cost_category: Mapped["CostCategory"] = relationship()

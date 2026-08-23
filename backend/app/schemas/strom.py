@@ -55,8 +55,3 @@ class StromReadingRead(BaseModel):
     role: str
     reading_date: date
     value: Decimal
-
-
-class TechemUebernehmenRequest(BaseModel):
-    von: date
-    bis: date

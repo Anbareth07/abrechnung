@@ -1,8 +1,35 @@
 from datetime import date
 
+from app import models
 from app.models.enums import AllocationKey, MeterType
 from app.services.completeness import check_completeness
 from tests import helpers
+
+
+def test_completeness_no_invoice_flag_and_strom_target(session):
+    """'Keine Rechnung'-Markierung und Strom-Ziel-Kostenart werden nicht als fehlend gemeldet."""
+    prop = helpers.make_property(session, "Objekt 3")
+
+    legion = helpers.make_category(session, prop, "legionellen", "Legionellen", AllocationKey.WF)
+    haus = helpers.make_category(session, prop, "hausbeleuchtung", "Hausbeleuchtung", AllocationKey.WF)
+    helpers.make_config(session, prop, legion, AllocationKey.WF, 1)
+    helpers.make_config(session, prop, haus, AllocationKey.WF, 2)
+
+    # Hausbeleuchtung ist als Strom-Ziel verknüpft → wird über das Strom-Modul abgedeckt
+    prop.strom_allocation_category_id = haus.id
+    # Legionellen: bewusst keine Rechnung in 2026
+    session.add(
+        models.CategoryNoInvoice(
+            property_id=prop.id, cost_category_id=legion.id, year=2026
+        )
+    )
+
+    session.commit()
+
+    missing = check_completeness(session, prop.id, 2026)
+    labels = {m.label for m in missing}
+    assert not any("Hausbeleuchtung" in l for l in labels)
+    assert not any("Legionellen" in l for l in labels)
 
 
 def test_completeness_reports_missing_everything(session):

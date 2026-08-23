@@ -117,22 +117,43 @@ def test_berechnung_preisaenderung_im_zeitraum(client):
     assert sum(x["netto"] for x in ap) == pytest.approx(ap1 + ap2, abs=1e-6)
 
 
-def test_techem_uebernahme_unterzaehler(client):
+def test_techem_sheet(client):
+    """Heizkosten-Blatt: Stromanteil + -kosten automatisch, Werte speicherbar."""
     p = _objekt(client)
-    client.post("/strom/readings", json={"property_id": p["id"], "role": "HAUPTZAEHLER", "reading_date": "2025-01-01", "value": "1000"})
-    client.post("/strom/readings", json={"property_id": p["id"], "role": "HAUPTZAEHLER", "reading_date": "2025-12-31", "value": "2000"})
     client.post("/strom/readings", json={"property_id": p["id"], "role": "UNTERZAEHLER", "reading_date": "2025-01-01", "value": "100"})
     client.post("/strom/readings", json={"property_id": p["id"], "role": "UNTERZAEHLER", "reading_date": "2025-12-31", "value": "300"})
+    client.post("/strom/prices", json={"property_id": p["id"], "kind": "ARBEITSPREIS", "valid_from": "2025-01-01", "valid_to": "2025-12-31", "amount": "0.30", "vat_rate": "19"})
+    client.post("/strom/prices", json={"property_id": p["id"], "kind": "STROMSTEUER", "valid_from": "2025-01-01", "valid_to": "2025-12-31", "amount": "0.02", "vat_rate": "19"})
 
-    r = client.post(f"/strom/{p['id']}/techem", json={"von": "2025-01-01", "bis": "2025-12-31"})
-    assert r.status_code == 200
-    data = r.json()
-    assert data["kind"] == "HEATING_ELECTRICITY"
-    assert data["quantity_kwh"] == pytest.approx(200.0)
+    # Vor dem Speichern: Stromanteil 200 kWh, Kosten (0,30+0,02)×200×1,19 = 76,16
+    s = client.get("/techem/sheet", params={"property_id": p["id"], "von": "2025-01-01", "bis": "2025-12-31"})
+    assert s.status_code == 200
+    assert float(s.json()["strom_kwh"]) == pytest.approx(200.0)
+    assert float(s.json()["strom_brutto"]) == pytest.approx(76.16)
+    assert float(s.json()["gas_kwh"]) == pytest.approx(0.0)
 
-    r2 = client.post(f"/strom/{p['id']}/techem", json={"von": "2025-01-01", "bis": "2025-12-31"})
-    assert r2.status_code == 200
-    assert r2.json()["techem_id"] == data["techem_id"]
+    # Speichern von Gas, Wartung Heizung und Kaminfeger
+    put = client.put("/techem/sheet", json={
+        "property_id": p["id"], "von": "2025-01-01", "bis": "2025-12-31",
+        "gas_kwh": "12000", "gas_cost": "900.00",
+        "maintenance_cost": "150.00", "chimney_cost": "80.00",
+        "notes": "Heizperiode 2025",
+    })
+    assert put.status_code == 200
+    data = put.json()
+    assert float(data["gas_kwh"]) == pytest.approx(12000.0)
+    assert float(data["gas_cost"]) == pytest.approx(900.0)
+    assert float(data["maintenance_cost"]) == pytest.approx(150.0)
+    assert float(data["chimney_cost"]) == pytest.approx(80.0)
+    assert float(data["strom_kwh"]) == pytest.approx(200.0)
+    assert float(data["strom_brutto"]) == pytest.approx(76.16)
+
+    # Liste enthält das Blatt
+    lst = client.get("/techem", params={"property_id": p["id"]}).json()
+    assert len(lst) == 1
+    assert float(lst[0]["gas_cost"]) == pytest.approx(900.0)
+    assert float(lst[0]["strom_kwh"]) == pytest.approx(200.0)
+    assert float(lst[0]["strom_brutto"]) == pytest.approx(76.16)
 
 
 def test_strom_in_abrechnung(client):

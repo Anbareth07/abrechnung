@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Button,
+  Card,
   Group,
-  Modal,
   NumberInput,
   Select,
   Stack,
@@ -12,221 +12,297 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { fmt } from "../api/client";
+import { useQuery } from "@tanstack/react-query";
+import { api, fmt } from "../api/client";
 import { ConfirmDeleteModal } from "../components/ConfirmDeleteModal";
 import { useTestData } from "../context/TestDataContext";
 import { useObject } from "../context/ObjectContext";
 import { useCrud } from "../hooks/useCrud";
-import { testPropertyIds, visibleProperties } from "../utils/testData";
-import type { Property, TechemRecord } from "../api/types";
-
-const KINDS = [
-  { value: "GAS", label: "Gas" },
-  { value: "HEATING_ELECTRICITY", label: "Heizstrom" },
-];
+import { visibleProperties } from "../utils/testData";
+import type { Property, TechemSheet } from "../api/types";
 
 const ok = (msg: string) => notifications.show({ message: msg, color: "green" });
 const err = () => notifications.show({ message: "Fehler beim Speichern", color: "red" });
 
+// Standard-Heizperiode: 01.07. – 30.06. des Folgejahres (aktuell laufende Periode)
+const defaultPeriod = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  if (now.getMonth() + 1 >= 7) return { von: `${y}-07-01`, bis: `${y + 1}-06-30` };
+  return { von: `${y - 1}-07-01`, bis: `${y}-06-30` };
+};
+
 export default function TechemPage() {
-  const { list, create, update, remove } = useCrud<TechemRecord>("/techem", "techem");
   const props = useCrud<Property>("/properties", "properties");
   const { hideTest } = useTestData();
   const { propertyFilter, setPropertyFilter } = useObject();
+  const propertyId = propertyFilter ? Number(propertyFilter) : null;
 
-  const [open, setOpen] = useState(false);
-  const [edit, setEdit] = useState<TechemRecord | null>(null);
-  const [del, setDel] = useState<TechemRecord | null>(null);
+  const [period, setPeriod] = useState(defaultPeriod());
+  const [del, setDel] = useState<TechemSheet | null>(null);
   const [form, setForm] = useState({
-    property_id: "",
-    kind: "GAS",
-    invoice_date: "",
-    quantity_kwh: "",
-    gross_amount: "",
+    gas_kwh: "",
+    gas_cost: "",
+    maintenance_cost: "",
+    chimney_cost: "",
     notes: "",
   });
 
-  const openCreate = () => {
-    setEdit(null);
-    setForm({
-      property_id: propertyFilter ?? "",
-      kind: "GAS",
-      invoice_date: "",
-      quantity_kwh: "",
-      gross_amount: "",
-      notes: "",
-    });
-    setOpen(true);
-  };
-  const openEdit = (r: TechemRecord) => {
-    setEdit(r);
-    setForm({
-      property_id: String(r.property_id),
-      kind: r.kind,
-      invoice_date: r.invoice_date,
-      quantity_kwh: r.quantity_kwh != null ? String(r.quantity_kwh) : "",
-      gross_amount: String(r.gross_amount),
-      notes: r.notes ?? "",
-    });
-    setOpen(true);
-  };
-  const save = () => {
-    const payload = {
-      property_id: Number(form.property_id),
-      kind: form.kind,
-      invoice_date: form.invoice_date,
-      quantity_kwh: form.quantity_kwh === "" ? null : form.quantity_kwh,
-      gross_amount: form.gross_amount || "0",
-      notes: form.notes || null,
-    };
-    const done = () => {
-      setOpen(false);
-      ok("Gespeichert");
-    };
-    if (edit) update.mutate({ id: edit.id, data: payload }, { onSuccess: done, onError: err });
-    else create.mutate(payload, { onSuccess: done, onError: err });
+  const sheets = useQuery({
+    queryKey: ["techem-sheets", propertyId],
+    enabled: propertyId != null,
+    queryFn: async () =>
+      (await api.get<TechemSheet[]>("/techem", { params: { property_id: propertyId } })).data,
+  });
+
+  const sheet = useQuery({
+    queryKey: ["techem-sheet", propertyId, period.von, period.bis],
+    enabled: propertyId != null && !!period.von && !!period.bis,
+    queryFn: async () =>
+      (
+        await api.get<TechemSheet>("/techem/sheet", {
+          params: { property_id: propertyId, von: period.von, bis: period.bis },
+        })
+      ).data,
+  });
+
+  // Gespeicherte Werte des Zeitraums in das Formular übernehmen
+  useEffect(() => {
+    const s = sheet.data;
+    if (s) {
+      setForm({
+        gas_kwh: s.gas_kwh ? String(s.gas_kwh) : "",
+        gas_cost: s.gas_cost ? String(s.gas_cost) : "",
+        maintenance_cost: s.maintenance_cost ? String(s.maintenance_cost) : "",
+        chimney_cost: s.chimney_cost ? String(s.chimney_cost) : "",
+        notes: s.notes ?? "",
+      });
+    }
+  }, [sheet.data]);
+
+  const save = async () => {
+    if (!propertyId) return;
+    try {
+      await api.put("/techem/sheet", {
+        property_id: propertyId,
+        von: period.von,
+        bis: period.bis,
+        gas_kwh: Number(form.gas_kwh || 0),
+        gas_cost: Number(form.gas_cost || 0),
+        maintenance_cost: Number(form.maintenance_cost || 0),
+        chimney_cost: Number(form.chimney_cost || 0),
+        notes: form.notes || null,
+      });
+      await Promise.all([sheets.refetch(), sheet.refetch()]);
+      ok("Heizkosten-Blatt gespeichert");
+    } catch {
+      err();
+    }
   };
 
-  const propName = (id: number) => props.list.data?.find((p) => p.id === id)?.name ?? "";
-  const testIds = testPropertyIds(props.list.data ?? []);
-  const filtered = (list.data ?? []).filter(
-    (r) =>
-      (!propertyFilter || r.property_id === Number(propertyFilter)) &&
-      (!hideTest || !testIds.has(r.property_id)),
-  );
+  const loadSheet = (s: TechemSheet) => setPeriod({ von: s.von, bis: s.bis });
 
-  const exportCsv = () => {
-    const header = "Objekt;Art;Rechnungsdatum;Menge (kWh);Brutto (EUR);Notizen";
-    const rows = filtered.map((r) =>
-      [
-        propName(r.property_id),
-        r.kind,
-        r.invoice_date,
-        r.quantity_kwh ?? "",
-        String(r.gross_amount),
-        (r.notes ?? "").replace(/;/g, ","),
-      ].join(";"),
-    );
-    const csv = "\uFEFF" + [header, ...rows].join("\r\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "techem.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+  const removeSheet = async () => {
+    if (!del?.id) return;
+    try {
+      await api.delete(`/techem/${del.id}`);
+      const deleted = del;
+      setDel(null);
+      await sheets.refetch();
+      // Falls der gelöschte Zeitraum gerade bearbeitet wird, Formular zurücksetzen
+      if (deleted.von === period.von && deleted.bis === period.bis) {
+        setForm({ gas_kwh: "", gas_cost: "", maintenance_cost: "", chimney_cost: "", notes: "" });
+      }
+      ok("Heizkosten-Blatt gelöscht");
+    } catch {
+      err();
+    }
   };
+
+  const canSave = propertyId != null && !!period.von && !!period.bis;
 
   return (
     <Stack>
-      <Title order={2}>Techem-Datenaufbereitung (Heizkosten)</Title>
+      <Title order={2}>Techem – Heizkosten-Datenaufbereitung</Title>
       <Text size="sm" c="dimmed">
-        Nur für das Objekt 2 – fließt nicht in die Mieter-Abrechnung ein. Heizjahr: 01.07.–30.06.
+        Je Objekt und Heizperiode (Standard 01.07.–30.06. des Folgejahres). Fließt nicht in die
+        Mieter-Abrechnung ein.
       </Text>
+
       <Group>
         <Select
-          label="Objekt filter"
-          placeholder="Objekt"
-          clearable
+          label="Objekt"
+          placeholder="Objekt wählen"
           data={visibleProperties(props.list.data ?? [], hideTest).map((p) => ({ value: String(p.id), label: p.name }))}
-          value={propertyFilter}
+          value={propertyFilter ?? ""}
           onChange={setPropertyFilter}
           w={280}
         />
-        <Button onClick={openCreate} mt="auto">
-          Neuer Eintrag
-        </Button>
-        <Button variant="outline" mt="auto" onClick={exportCsv} disabled={filtered.length === 0}>
-          CSV-Export
-        </Button>
+        <TextInput
+          type="date"
+          label="Zeitraum von"
+          value={period.von}
+          onChange={(e) => setPeriod({ ...period, von: e.currentTarget.value })}
+        />
+        <TextInput
+          type="date"
+          label="Zeitraum bis"
+          value={period.bis}
+          onChange={(e) => setPeriod({ ...period, bis: e.currentTarget.value })}
+        />
       </Group>
 
+      {propertyId != null && (
+        <Card withBorder p="md">
+          <Text fw={600} mb="xs">
+            Heizkosten-Blatt {period.von} – {period.bis}
+          </Text>
+
+          <Table withColumnBorders mb="sm">
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th w={80}>Einheit</Table.Th>
+                <Table.Th>Heizstrom (Unterzähler)</Table.Th>
+                <Table.Th>Gas</Table.Th>
+                <Table.Th>Wartung Heizung</Table.Th>
+                <Table.Th>Kaminfeger</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              <Table.Tr>
+                <Table.Td fw={700}>kWh</Table.Td>
+                <Table.Td>
+                  <Text size="xl" fw={700}>
+                    {sheet.data ? `${fmt(Number(sheet.data.strom_kwh), 2)}` : "—"}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    automatisch aus dem Unterzähler
+                  </Text>
+                </Table.Td>
+                <Table.Td>
+                  <NumberInput
+                    aria-label="Gasverbrauch (kWh)"
+                    placeholder="kWh"
+                    value={form.gas_kwh}
+                    onChange={(v) => setForm({ ...form, gas_kwh: String(v ?? "") })}
+                    decimalScale={0}
+                  />
+                </Table.Td>
+                <Table.Td></Table.Td>
+                <Table.Td></Table.Td>
+              </Table.Tr>
+              <Table.Tr>
+                <Table.Td fw={700}>€</Table.Td>
+                <Table.Td>
+                  <Text size="lg" fw={600}>
+                    {sheet.data ? `${fmt(Number(sheet.data.strom_brutto), 2)} brutto` : "—"}
+                  </Text>
+                </Table.Td>
+                <Table.Td>
+                  <NumberInput
+                    aria-label="Gaskosten (€ brutto)"
+                    placeholder="€"
+                    value={Number(form.gas_cost || 0)}
+                    onChange={(v) => setForm({ ...form, gas_cost: String(v ?? "") })}
+                    decimalScale={2}
+                    fixedDecimalScale
+                  />
+                </Table.Td>
+                <Table.Td>
+                  <NumberInput
+                    aria-label="Wartung Heizung (€)"
+                    placeholder="€"
+                    value={Number(form.maintenance_cost || 0)}
+                    onChange={(v) => setForm({ ...form, maintenance_cost: String(v ?? "") })}
+                    decimalScale={2}
+                    fixedDecimalScale
+                  />
+                </Table.Td>
+                <Table.Td>
+                  <NumberInput
+                    aria-label="Kaminfeger (€)"
+                    placeholder="€"
+                    value={Number(form.chimney_cost || 0)}
+                    onChange={(v) => setForm({ ...form, chimney_cost: String(v ?? "") })}
+                    decimalScale={2}
+                    fixedDecimalScale
+                  />
+                </Table.Td>
+              </Table.Tr>
+            </Table.Tbody>
+          </Table>
+
+          <TextInput
+            label="Notizen"
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.currentTarget.value })}
+            mb="sm"
+          />
+
+          <Button onClick={save} disabled={!canSave}>
+            Speichern
+          </Button>
+        </Card>
+      )}
+
+      <Title order={4}>Gespeicherte Zeiträume</Title>
       <Table striped highlightOnHover>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Objekt</Table.Th>
-            <Table.Th>Art</Table.Th>
-            <Table.Th>Rechnungsdatum</Table.Th>
-            <Table.Th>Menge (kWh)</Table.Th>
-            <Table.Th>Brutto (€)</Table.Th>
+            <Table.Th>Zeitraum</Table.Th>
+            <Table.Th>Heizstrom (kWh)</Table.Th>
+            <Table.Th>Heizstrom (€)</Table.Th>
+            <Table.Th>Gas (kWh)</Table.Th>
+            <Table.Th>Gas (€)</Table.Th>
+            <Table.Th>Wartung (€)</Table.Th>
+            <Table.Th>Kaminfeger (€)</Table.Th>
             <Table.Th>Notizen</Table.Th>
             <Table.Th></Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {filtered.map((r) => (
-            <Table.Tr key={r.id}>
-              <Table.Td>{propName(r.property_id)}</Table.Td>
-              <Table.Td>{r.kind === "GAS" ? "Gas" : "Heizstrom"}</Table.Td>
-              <Table.Td>{r.invoice_date}</Table.Td>
-              <Table.Td>{r.quantity_kwh != null ? fmt(r.quantity_kwh, 0) : "—"}</Table.Td>
-              <Table.Td>{fmt(r.gross_amount, 2)}</Table.Td>
-              <Table.Td>{r.notes ?? "—"}</Table.Td>
+          {(sheets.data ?? []).map((s) => (
+            <Table.Tr key={`${s.von}-${s.bis}`}>
+              <Table.Td>
+                {s.von} – {s.bis}
+              </Table.Td>
+              <Table.Td>{fmt(Number(s.strom_kwh), 2)}</Table.Td>
+              <Table.Td>{fmt(Number(s.strom_brutto), 2)} €</Table.Td>
+              <Table.Td>{fmt(Number(s.gas_kwh), 0)}</Table.Td>
+              <Table.Td>{fmt(Number(s.gas_cost), 2)} €</Table.Td>
+              <Table.Td>{fmt(Number(s.maintenance_cost), 2)} €</Table.Td>
+              <Table.Td>{fmt(Number(s.chimney_cost), 2)} €</Table.Td>
+              <Table.Td>{s.notes ?? "—"}</Table.Td>
               <Table.Td>
                 <Group gap="xs" justify="flex-end">
-                  <Button size="compact-xs" variant="light" onClick={() => openEdit(r)}>
-                    Ändern
+                  <Button size="compact-xs" variant="light" onClick={() => loadSheet(s)}>
+                    Laden
                   </Button>
-                  <Button size="compact-xs" variant="light" color="red" onClick={() => setDel(r)}>
+                  <Button size="compact-xs" variant="light" color="red" onClick={() => setDel(s)}>
                     Löschen
                   </Button>
                 </Group>
               </Table.Td>
             </Table.Tr>
           ))}
+          {(sheets.data ?? []).length === 0 && (
+            <Table.Tr>
+              <Table.Td colSpan={9}>
+                <Text size="sm" c="dimmed">
+                  Noch keine Zeiträume gespeichert.
+                </Text>
+              </Table.Td>
+            </Table.Tr>
+          )}
         </Table.Tbody>
       </Table>
 
-      <Modal opened={open} onClose={() => setOpen(false)} title={edit ? "Eintrag ändern" : "Neuer Eintrag"}>
-        <Stack>
-          <Select
-            label="Objekt"
-            data={visibleProperties(props.list.data ?? [], hideTest).map((p) => ({ value: String(p.id), label: p.name }))}
-            value={form.property_id || null}
-            onChange={(v) => setForm({ ...form, property_id: v ?? "" })}
-          />
-          <Select
-            label="Art"
-            data={KINDS}
-            value={form.kind}
-            onChange={(v) => setForm({ ...form, kind: v ?? "GAS" })}
-          />
-          <TextInput
-            type="date"
-            label="Rechnungsdatum"
-            value={form.invoice_date}
-            onChange={(e) => setForm({ ...form, invoice_date: e.currentTarget.value })}
-          />
-          <NumberInput
-            label="Menge (kWh)"
-            value={form.quantity_kwh}
-            onChange={(v) => setForm({ ...form, quantity_kwh: String(v ?? "") })}
-            decimalScale={0}
-          />
-          <NumberInput
-            label="Brutto (€)"
-            value={form.gross_amount}
-            onChange={(v) => setForm({ ...form, gross_amount: String(v ?? "") })}
-            decimalScale={2}
-          />
-          <TextInput
-            label="Notizen"
-            value={form.notes}
-            onChange={(e) => setForm({ ...form, notes: e.currentTarget.value })}
-          />
-          <Button onClick={save}>Speichern</Button>
-        </Stack>
-      </Modal>
-
       <ConfirmDeleteModal
         opened={!!del}
-        message={`Techem-Eintrag vom ${del?.invoice_date} (${del?.kind === "GAS" ? "Gas" : "Heizstrom"}) wird dauerhaft gelöscht.`}
+        message={`Heizkosten-Blatt (${del?.von} – ${del?.bis}) wird dauerhaft gelöscht.`}
         confirmText="LÖSCHEN"
         onClose={() => setDel(null)}
-        onConfirm={() => {
-          if (del) remove.mutate(del.id);
-          setDel(null);
-        }}
+        onConfirm={removeSheet}
       />
     </Stack>
   );

@@ -112,15 +112,20 @@ export interface MeterReading {
   value: Money;
 }
 
-export interface TechemRecord {
-  id: number;
+export interface TechemSheet {
+  id?: number;
   property_id: number;
-  kind: string;
-  invoice_date: string;
-  quantity_kwh?: Money | null;
-  gross_amount: Money;
+  von: string;
+  bis: string;
+  strom_kwh: Money;
+  strom_netto: Money;
+  strom_vat: Money;
+  strom_brutto: Money;
+  gas_kwh: Money;
+  gas_cost: Money;
+  maintenance_cost: Money;
+  chimney_cost: Money;
   notes?: string | null;
-  meta?: Record<string, unknown>;
 }
 
 export interface CategoryLine {
@@ -198,6 +203,15 @@ export interface MissingItem {
   kind: string;
   label: string;
   detail: string;
+  category_id?: number | null;
+}
+
+export interface NoInvoiceFlag {
+  id: number;
+  property_id: number;
+  cost_category_id: number;
+  year: number;
+  category_name?: string;
 }
 
 export interface FinalizedTenantLine {

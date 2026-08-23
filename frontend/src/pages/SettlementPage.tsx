@@ -3,6 +3,7 @@ import {
   Accordion,
   Alert,
   Button,
+  Card,
   Group,
   Select,
   SegmentedControl,
@@ -19,7 +20,7 @@ import { useTestData } from "../context/TestDataContext";
 import { useObject } from "../context/ObjectContext";
 import { useCrud } from "../hooks/useCrud";
 import { visibleProperties } from "../utils/testData";
-import type { FinalizedResult, MissingItem, Property, SettlementResult } from "../api/types";
+import type { FinalizedResult, MissingItem, NoInvoiceFlag, Property, SettlementResult } from "../api/types";
 
 // Zeigt Werte wie eingegeben/berechnet an – ohne Aufrundung auf 2 Stellen
 const fmtNoRound = (v: unknown): string => {
@@ -62,6 +63,31 @@ export default function SettlementPage() {
     queryFn: async () =>
       (await api.get<MissingItem[]>(`/settlements/${propertyId}/${year}/completeness`)).data,
   });
+
+  // Kostenarten, die je Jahr als "keine Rechnung" markiert sind
+  const noInvoices = useQuery({
+    queryKey: ["no-invoices", propertyId, year],
+    enabled: !!propertyId,
+    queryFn: async () =>
+      (await api.get<NoInvoiceFlag[]>(`/settlements/${propertyId}/${year}/no-invoices`)).data,
+  });
+
+  const markNoInvoice = async (categoryId: number) => {
+    try {
+      await api.post(`/settlements/${propertyId}/${year}/no-invoices`, { cost_category_id: categoryId });
+      await Promise.all([completeness.refetch(), noInvoices.refetch()]);
+    } catch {
+      notifications.show({ message: "Fehler beim Markieren", color: "red" });
+    }
+  };
+  const unmarkNoInvoice = async (flagId: number) => {
+    try {
+      await api.delete(`/settlements/${propertyId}/${year}/no-invoices/${flagId}`);
+      await Promise.all([completeness.refetch(), noInvoices.refetch()]);
+    } catch {
+      notifications.show({ message: "Fehler beim Entfernen", color: "red" });
+    }
+  };
 
   // Umschalter: live berechnete Abrechnung vs. finalisierter Snapshot
   const [view, setView] = useState<"live" | "finalized">("live");
@@ -133,12 +159,48 @@ export default function SettlementPage() {
         <Alert color="yellow" title="Noch fehlende Daten">
           <Stack gap={4}>
             {completeness.data.map((m, i) => (
-              <Text key={i} size="sm">
-                • {m.label} {m.detail ? `(${m.detail})` : ""}
-              </Text>
+              <Group key={i} justify="space-between" gap="xs">
+                <Text size="sm">
+                  • {m.label} {m.detail ? `(${m.detail})` : ""}
+                </Text>
+                {m.kind === "INVOICE" && m.category_id && (
+                  <Button
+                    size="compact-xs"
+                    variant="light"
+                    onClick={() => markNoInvoice(m.category_id!)}
+                  >
+                    Keine Rechnung dieses Jahr
+                  </Button>
+                )}
+              </Group>
             ))}
           </Stack>
         </Alert>
+      )}
+
+      {noInvoices.data && noInvoices.data.length > 0 && (
+        <Card withBorder p="xs" mb="xs">
+          <Stack gap={6}>
+            <Text size="sm" fw={600}>
+              Als „keine Rechnung“ markiert
+            </Text>
+            {noInvoices.data.map((f) => (
+              <Group key={f.id} justify="space-between" gap="xs">
+                <Text size="sm">
+                  • {f.category_name} ({f.year})
+                </Text>
+                <Button
+                  size="compact-xs"
+                  variant="light"
+                  color="gray"
+                  onClick={() => unmarkNoInvoice(f.id)}
+                >
+                  Rückgängig
+                </Button>
+              </Group>
+            ))}
+          </Stack>
+        </Card>
       )}
 
       {result.isLoading && <Text>Berechne …</Text>}

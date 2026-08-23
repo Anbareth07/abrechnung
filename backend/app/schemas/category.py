@@ -54,3 +54,7 @@ class AllocationConfigCreate(BaseModel):
 class AllocationConfigUpdate(BaseModel):
     allocation_key: Optional[AllocationKey] = None
     sort_order: Optional[int] = None
+
+
+class NoInvoiceCreate(BaseModel):
+    cost_category_id: int

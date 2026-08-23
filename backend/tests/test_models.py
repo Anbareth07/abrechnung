@@ -42,10 +42,10 @@ def test_all_tables_create_and_snapshot_works(session):
 
     techem = models.TechemRecord(
         property_id=prop.id,
-        kind=models.TechemKind.GAS,
-        invoice_date=date(2026, 6, 30),
-        quantity_kwh=Decimal("12000"),
-        gross_amount=Decimal("950.00"),
+        von=date(2025, 7, 1),
+        bis=date(2026, 6, 30),
+        gas_kwh=Decimal("12000"),
+        gas_cost=Decimal("950.00"),
     )
     session.add(techem)
 
@@ -53,7 +53,7 @@ def test_all_tables_create_and_snapshot_works(session):
 
     assert session.get(models.Settlement, settlement.id).year == 2026
     assert session.get(models.SettlementLine, line.id).saldo == Decimal("-1000.00")
-    assert session.get(models.TechemRecord, techem.id).quantity_kwh == Decimal("12000")
+    assert session.get(models.TechemRecord, techem.id).gas_kwh == Decimal("12000")
     tenant_advances = session.get(models.Tenant, tenant.id).advance_payments
     assert len(tenant_advances) == 1
     assert tenant_advances[0].amount == Decimal("150")

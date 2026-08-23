@@ -15,7 +15,6 @@ from ..schemas.strom import (
     StromReadingCreate,
     StromReadingRead,
     StromReadingUpdate,
-    TechemUebernehmenRequest,
 )
 from ..services import strom as strom_service
 
@@ -184,47 +183,3 @@ def get_berechnung(
         return strom_service.berechnung(db, property_id, v, b)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
-
-
-@router.post("/{property_id}/techem")
-def techem_uebernehmen(
-    property_id: int,
-    payload: TechemUebernehmenRequest,
-    db: Session = Depends(get_db),
-):
-    """Übernimmt den Unterzähler-Verbrauch des Zeitraums in den Heizstrom-Techem-Eintrag."""
-    if db.get(models.Property, property_id) is None:
-        raise HTTPException(404, "Objekt nicht gefunden")
-    result = strom_service.berechnung(db, property_id, payload.von, payload.bis)
-    unter = result.get("unterzaehler")
-    if unter is None or unter["consumption"] == 0:
-        raise HTTPException(422, "Kein Unterzähler-Verbrauch im Zeitraum")
-
-    record = db.scalar(
-        select(models.TechemRecord).where(
-            models.TechemRecord.property_id == property_id,
-            models.TechemRecord.kind == models.TechemKind.HEATING_ELECTRICITY,
-        )
-    )
-    if record is None:
-        record = models.TechemRecord(
-            property_id=property_id,
-            kind=models.TechemKind.HEATING_ELECTRICITY,
-            invoice_date=payload.bis,
-            quantity_kwh=strom_service.Decimal(unter["consumption"]),
-            gross_amount=strom_service.Decimal(0),
-            notes="Strom-Unterzähler (automatisch übernommen)",
-        )
-        db.add(record)
-    else:
-        record.quantity_kwh = strom_service.Decimal(unter["consumption"])
-        record.notes = "Strom-Unterzähler (automatisch übernommen)"
-    db.commit()
-    db.refresh(record)
-    return {
-        "techem_id": record.id,
-        "property_id": property_id,
-        "kind": record.kind.value,
-        "quantity_kwh": float(record.quantity_kwh),
-        "invoice_date": record.invoice_date.isoformat(),
-    }

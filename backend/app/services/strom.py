@@ -151,3 +151,58 @@ def berechnung(session: Session, property_id: int, von: date, bis: date) -> dict
             "brutto": float(sum_netto + sum_vat),
         },
     }
+
+
+def unterzaehler_verbrauch(session: Session, property_id: int, von: date, bis: date) -> Decimal:
+    """Verbrauch des Unterzählers im Zeitraum (Heizstromanteil für Techem)."""
+    try:
+        res = berechnung(session, property_id, von, bis)
+    except ValueError:
+        return ZERO
+    unter = res.get("unterzaehler")
+    if unter is None:
+        return ZERO
+    return Decimal(str(unter["consumption"]))
+
+
+def unterzaehler_kosten(session: Session, property_id: int, von: date, bis: date) -> dict:
+    """Kosten des Unterzähler-Verbrauchs (Heizstrom) im Zeitraum.
+
+    Arbeitspreis und Stromsteuer werden tageanteilig auf den Unterzähler-
+    Verbrauch angewendet; die Grundgebühr bleibt beim allgemeinen Strom.
+    """
+    unter = _meter_consumption(session, property_id, "UNTERZAEHLER", von, bis)
+    if unter is None:
+        return {"kwh": 0.0, "netto": 0.0, "vat": 0.0, "brutto": 0.0}
+    kwh = Decimal(str(unter["consumption"]))
+    total_days = (bis - von).days + 1
+    netto = vat = ZERO
+    for kind in ("ARBEITSPREIS", "STROMSTEUER"):
+        prices = (
+            session.execute(
+                select(models.StromPrice)
+                .where(
+                    models.StromPrice.property_id == property_id,
+                    models.StromPrice.kind == kind,
+                )
+                .order_by(models.StromPrice.valid_from)
+            )
+            .scalars()
+            .all()
+        )
+        for p in prices:
+            seg_start = max(von, p.valid_from)
+            seg_end = min(bis, p.valid_to)
+            if seg_start > seg_end:
+                continue
+            days = (seg_end - seg_start).days + 1
+            n = p.amount * (kwh * Decimal(days) / Decimal(total_days))
+            v = n * p.vat_rate / Decimal(100)
+            netto += n
+            vat += v
+    return {
+        "kwh": float(kwh),
+        "netto": float(netto),
+        "vat": float(vat),
+        "brutto": float(netto + vat),
+    }

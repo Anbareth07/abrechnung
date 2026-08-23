@@ -2,38 +2,35 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from ..models.enums import TechemKind
+from pydantic import BaseModel, ConfigDict
 
 
-class TechemRecordRead(BaseModel):
+class TechemSheetRead(BaseModel):
+    """Heizkosten-Blatt für einen Zeitraum (strom_kwh automatisch aus Unterzähler)."""
+
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
+    id: Optional[int] = None
     property_id: int
-    kind: TechemKind
-    invoice_date: date
-    quantity_kwh: Optional[Decimal]
-    gross_amount: Decimal
-    notes: Optional[str]
-    meta: dict
+    von: date
+    bis: date
+    strom_kwh: Decimal = Decimal("0")
+    strom_netto: Decimal = Decimal("0")
+    strom_vat: Decimal = Decimal("0")
+    strom_brutto: Decimal = Decimal("0")
+    gas_kwh: Decimal = Decimal("0")
+    gas_cost: Decimal = Decimal("0")
+    maintenance_cost: Decimal = Decimal("0")
+    chimney_cost: Decimal = Decimal("0")
+    notes: Optional[str] = None
 
 
-class TechemRecordCreate(BaseModel):
+class TechemSheetWrite(BaseModel):
     property_id: int
-    kind: TechemKind = TechemKind.GAS
-    invoice_date: date
-    quantity_kwh: Optional[Decimal] = None
-    gross_amount: Decimal = Decimal("0")
+    von: date
+    bis: date
+    gas_kwh: Decimal = Decimal("0")
+    gas_cost: Decimal = Decimal("0")
+    maintenance_cost: Decimal = Decimal("0")
+    chimney_cost: Decimal = Decimal("0")
     notes: Optional[str] = None
-    meta: dict = Field(default_factory=dict)
-
-
-class TechemRecordUpdate(BaseModel):
-    kind: Optional[TechemKind] = None
-    invoice_date: Optional[date] = None
-    quantity_kwh: Optional[Decimal] = None
-    gross_amount: Optional[Decimal] = None
-    notes: Optional[str] = None
-    meta: Optional[dict] = None

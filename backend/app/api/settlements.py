@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from ..db import get_db
+from ..schemas.category import NoInvoiceCreate
 from ..services.completeness import check_completeness
 from ..services.engine import compute_settlement
 from ..services.pdf import generate_tenant_pdf
@@ -37,6 +38,65 @@ def get_settlement(property_id: int, year: int, db: Session = Depends(get_db)):
 def get_completeness(property_id: int, year: int, db: Session = Depends(get_db)):
     """Liste fehlender Daten (Rechnungen, Zählerstände) für das Abrechnungsjahr."""
     return check_completeness(db, property_id, year)
+
+
+def _no_invoice_dict(flag: models.CategoryNoInvoice) -> dict:
+    return {
+        "id": flag.id,
+        "property_id": flag.property_id,
+        "cost_category_id": flag.cost_category_id,
+        "year": flag.year,
+        "category_name": flag.cost_category.name,
+    }
+
+
+@router.get("/{property_id}/{year}/no-invoices")
+def list_no_invoices(property_id: int, year: int, db: Session = Depends(get_db)):
+    """Kostenarten, die für das Jahr als "keine Rechnung" markiert sind."""
+    flags = db.scalars(
+        select(models.CategoryNoInvoice).where(
+            models.CategoryNoInvoice.property_id == property_id,
+            models.CategoryNoInvoice.year == year,
+        )
+    ).all()
+    return [_no_invoice_dict(f) for f in flags]
+
+
+@router.post("/{property_id}/{year}/no-invoices", status_code=201)
+def mark_no_invoice(
+    property_id: int, year: int, payload: NoInvoiceCreate, db: Session = Depends(get_db)
+):
+    """Markiert eine Kostenart für das Jahr als "keine Rechnung"."""
+    cat = db.get(models.CostCategory, payload.cost_category_id)
+    if cat is None or cat.property_id != property_id:
+        raise HTTPException(404, "Kostenart nicht gefunden")
+    flag = db.scalar(
+        select(models.CategoryNoInvoice).where(
+            models.CategoryNoInvoice.property_id == property_id,
+            models.CategoryNoInvoice.cost_category_id == payload.cost_category_id,
+            models.CategoryNoInvoice.year == year,
+        )
+    )
+    if flag is None:
+        flag = models.CategoryNoInvoice(
+            property_id=property_id,
+            cost_category_id=payload.cost_category_id,
+            year=year,
+        )
+        db.add(flag)
+        db.commit()
+        db.refresh(flag)
+    return _no_invoice_dict(flag)
+
+
+@router.delete("/{property_id}/{year}/no-invoices/{flag_id}", status_code=204)
+def unmark_no_invoice(flag_id: int, db: Session = Depends(get_db)):
+    """Entfernt die "keine Rechnung"-Markierung."""
+    flag = db.get(models.CategoryNoInvoice, flag_id)
+    if flag is None:
+        raise HTTPException(404, "Markierung nicht gefunden")
+    db.delete(flag)
+    db.commit()
 
 
 @router.get("/{property_id}/{year}/tenants/{tenant_id}/pdf")

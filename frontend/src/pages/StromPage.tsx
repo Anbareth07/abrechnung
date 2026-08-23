@@ -230,16 +230,6 @@ export default function StromPage() {
     }
   };
 
-  const techemUebernehmen = async () => {
-    if (!propertyId || !calcVon || !calcBis) return;
-    try {
-      await api.post(`/strom/${propertyId}/techem`, { von: calcVon, bis: calcBis });
-      ok("Unterzähler-Verbrauch in Techem übernommen");
-    } catch {
-      err("Übernahme fehlgeschlagen (kein Unterzähler-Verbrauch?)");
-    }
-  };
-
   const canSavePrice =
     propertyId != null && priceForm.valid_from !== "" && priceForm.valid_to !== "" && priceForm.amount !== "";
   const canSaveReading = propertyId != null && readForm.reading_date !== "" && readForm.value !== "";
@@ -446,11 +436,6 @@ export default function StromPage() {
             <Button onClick={runCalc} disabled={!canCalc} mt="auto">
               Berechnen
             </Button>
-            {result?.unterzaehler && result.unterzaehler.consumption > 0 && (
-              <Button onClick={techemUebernehmen} variant="light" mt="auto">
-                In Techem übernehmen
-              </Button>
-            )}
           </Group>
 
           {result && (

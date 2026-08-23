@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 import sqlalchemy as sa
 from sqlalchemy import select
@@ -20,6 +21,7 @@ class MissingItem:
     kind: str  # "INVOICE" | "METER_READING"
     label: str
     detail: str = ""
+    category_id: Optional[int] = None
 
 
 def check_completeness(session: Session, property_id: int, year: int) -> list[MissingItem]:
@@ -32,6 +34,17 @@ def check_completeness(session: Session, property_id: int, year: int) -> list[Mi
         .where(models.AllocationConfig.property_id == property_id)
         .order_by(models.AllocationConfig.sort_order)
     ).scalars().all()
+
+    # Kostenarten, die je Jahr als "bewusst keine Rechnung" markiert sind
+    no_invoice = {
+        (f.property_id, f.cost_category_id)
+        for f in session.execute(
+            select(models.CategoryNoInvoice).where(models.CategoryNoInvoice.year == year)
+        ).scalars()
+    }
+    # Kostenart, die als Strom-Ziel verknüpft ist (wird über das Strom-Modul abgedeckt)
+    prop = session.get(models.Property, property_id)
+    strom_cat_id = prop.strom_allocation_category_id if prop else None
 
     invoices = session.execute(
         select(models.Invoice).where(models.Invoice.property_id == property_id)
@@ -54,6 +67,8 @@ def check_completeness(session: Session, property_id: int, year: int) -> list[Mi
         if cfg.allocation_key == models.AllocationKey.NONE:
             continue
         cat = cfg.cost_category
+        if (property_id, cat.id) in no_invoice or cat.id == strom_cat_id:
+            continue
         has_overlap = cat.id in recurring_cats or any(
             prorata.overlap_days(item.from_date, item.to_date, ys, ye) > 0
             for item in items_by_cat.get(cat.id, [])
@@ -64,6 +79,7 @@ def check_completeness(session: Session, property_id: int, year: int) -> list[Mi
                     kind="INVOICE",
                     label=f"Rechnung fehlt: {cat.name}",
                     detail=f"Umlage {cfg.allocation_key.value}",
+                    category_id=cat.id,
                 )
             )
 
