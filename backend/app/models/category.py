@@ -11,11 +11,21 @@ from .enums import AllocationKey
 
 
 class CostCategory(Base):
-    """Kostenart (z. B. Grundsteuer) mit Default-Umlageschlüssel."""
+    """Kostenart (z. B. Grundsteuer), gebunden an ein Objekt.
+
+    Kostenarten werden nicht separat verwaltet, sondern entstehen automatisch,
+    wenn im Umlageschlüssel eine Kostenart hinzugefügt wird – sie gelten dann
+    für genau dieses eine Objekt.
+    """
 
     __tablename__ = "cost_categories"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    property_id: Mapped[int] = mapped_column(
+        ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Technischer Schlüssel: bleibt global eindeutig; je Objekt gibt es eigene
+    # Kategorien, deren Code bei Bedarf automatisch erweitert wird.
     code: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     default_allocation_key: Mapped[AllocationKey] = mapped_column(
@@ -25,6 +35,7 @@ class CostCategory(Base):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
+    prop: Mapped["Property"] = relationship(back_populates="cost_categories")
     allocation_configs: Mapped[List["AllocationConfig"]] = relationship(
         back_populates="cost_category", cascade="all, delete-orphan"
     )

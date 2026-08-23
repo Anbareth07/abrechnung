@@ -8,9 +8,9 @@ from tests import helpers
 def test_completeness_reports_missing_everything(session):
     prop = helpers.make_property(session, "Objekt 1")
 
-    trink = helpers.make_category(session, "trinkwasser", "Trinkwasser", AllocationKey.CONSUMPTION)
-    grund = helpers.make_category(session, "grundsteuer", "Grundsteuer", AllocationKey.NF)
-    abfall = helpers.make_category(session, "abfall", "Abfall", AllocationKey.NONE)
+    trink = helpers.make_category(session, prop, "trinkwasser", "Trinkwasser", AllocationKey.CONSUMPTION)
+    grund = helpers.make_category(session, prop, "grundsteuer", "Grundsteuer", AllocationKey.NF)
+    abfall = helpers.make_category(session, prop, "abfall", "Abfall", AllocationKey.NONE)
 
     helpers.make_config(session, prop, trink, AllocationKey.CONSUMPTION, 1)
     helpers.make_config(session, prop, grund, AllocationKey.NF, 2)
@@ -39,7 +39,7 @@ def test_completeness_reports_missing_everything(session):
 def test_completeness_ok_when_data_present(session):
     prop = helpers.make_property(session, "Objekt 2")
 
-    grund = helpers.make_category(session, "grundsteuer", "Grundsteuer", AllocationKey.WF)
+    grund = helpers.make_category(session, prop, "grundsteuer", "Grundsteuer", AllocationKey.WF)
     helpers.make_config(session, prop, grund, AllocationKey.WF, 1)
 
     helpers.make_invoice(

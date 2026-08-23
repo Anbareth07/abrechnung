@@ -15,8 +15,10 @@ def make_property(session, name: str, street: str = ""):
     return prop
 
 
-def make_category(session, code: str, name: str, default_key: AllocationKey = AllocationKey.NONE):
-    cat = models.CostCategory(code=code, name=name, default_allocation_key=default_key)
+def make_category(session, prop, code: str, name: str, default_key: AllocationKey = AllocationKey.NONE):
+    cat = models.CostCategory(
+        property_id=prop.id, code=code, name=name, default_allocation_key=default_key
+    )
     session.add(cat)
     session.flush()
     return cat

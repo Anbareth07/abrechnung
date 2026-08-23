@@ -7,7 +7,7 @@ from .enums import (
     TechemKind,
 )
 from .property import Property
-from .tenant import LeaseUnit, Tenant, AdvancePayment
+from .tenant import LeaseUnit, Tenant, AdvancePayment, MonthlyCost
 from .category import CostCategory, AllocationConfig
 from .meter import Meter, MeterReading
 from .invoice import Invoice, InvoiceItem
@@ -26,6 +26,7 @@ __all__ = [
     "LeaseUnit",
     "Tenant",
     "AdvancePayment",
+    "MonthlyCost",
     "CostCategory",
     "AllocationConfig",
     "Meter",

@@ -6,6 +6,7 @@ class AllocationKey(str, Enum):
 
     WF = "WF"  # Wohnfläche
     NF = "NF"  # Nutzfläche
+    WOHNUNG = "WOHNUNG"  # je Wohnung: Kosten gehen 1:1 gleichmäßig auf jede belegte Einheit
     CONSUMPTION = "CONSUMPTION"  # Verbrauch (Zähler, z. B. Wasser)
     NONE = "NONE"  # nicht umgelegt (z. B. Abfall, Heizung/Gas)
 

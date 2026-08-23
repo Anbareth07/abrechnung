@@ -16,12 +16,15 @@ import {
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { API_URL, api, fmt } from "../api/client";
+import { useTestData } from "../context/TestDataContext";
 import { useCrud } from "../hooks/useCrud";
+import { visibleProperties } from "../utils/testData";
 import type { MissingItem, Property, SettlementResult } from "../api/types";
 
 const KEY_LABEL: Record<string, string> = {
   WF: "Wohnfläche",
   NF: "Nutzfläche",
+  WOHNUNG: "Wohnung",
   CONSUMPTION: "Verbrauch",
   NONE: "—",
 };
@@ -33,6 +36,7 @@ const YEARS = Array.from({ length: CURRENT_YEAR + 3 - 2025 + 1 }, (_, i) => Stri
 
 export default function SettlementPage() {
   const props = useCrud<Property>("/properties", "properties");
+  const { hideTest } = useTestData();
   const [propertyId, setPropertyId] = useState<string | null>(null);
   const [year, setYear] = useState<string>(String(CURRENT_YEAR));
 
@@ -57,7 +61,7 @@ export default function SettlementPage() {
         <Select
           label="Objekt"
           placeholder="Objekt wählen"
-          data={(props.list.data ?? []).map((p) => ({ value: String(p.id), label: p.name }))}
+          data={visibleProperties(props.list.data ?? [], hideTest).map((p) => ({ value: String(p.id), label: p.name }))}
           value={propertyId}
           onChange={setPropertyId}
           w={320}
@@ -72,7 +76,7 @@ export default function SettlementPage() {
       <Group>
         <Select
           label="Objekt"
-          data={(props.list.data ?? []).map((p) => ({ value: String(p.id), label: p.name }))}
+          data={visibleProperties(props.list.data ?? [], hideTest).map((p) => ({ value: String(p.id), label: p.name }))}
           value={propertyId}
           onChange={setPropertyId}
           w={280}

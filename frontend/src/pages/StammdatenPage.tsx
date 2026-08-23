@@ -13,14 +13,31 @@ import {
   Text,
   TextInput,
   Title,
+  Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, fmt, num } from "../api/client";
+import { ConfirmDeleteModal } from "../components/ConfirmDeleteModal";
+import { InlineEdit } from "../components/InlineEdit";
+import { useTestData } from "../context/TestDataContext";
 import { useCrud } from "../hooks/useCrud";
+import {
+  testPropertyIds,
+  visibleProperties,
+  visibleTenants,
+  visibleUnits,
+} from "../utils/testData";
+import {
+  advanceHistory,
+  contactInfo,
+  groupTenantsByProperty,
+  monthlyBreakdown,
+  monthlyTotalWithAdvance,
+  unitOptions,
+} from "../utils/tenantList";
 import type {
   AllocationConfig,
-  CostCategory,
   LeaseUnit,
   Property,
   Tenant,
@@ -29,13 +46,10 @@ import type {
 const ALLOCATION_KEYS = [
   { value: "WF", label: "Wohnfläche (WF)" },
   { value: "NF", label: "Nutzfläche (NF)" },
+  { value: "WOHNUNG", label: "Wohnung (1:1)" },
   { value: "CONSUMPTION", label: "Verbrauch" },
   { value: "NONE", label: "nicht umgelegt" },
 ];
-
-const KEY_LABEL: Record<string, string> = Object.fromEntries(
-  ALLOCATION_KEYS.map((k) => [k.value, k.label]),
-);
 
 const ok = (msg: string) => notifications.show({ message: msg, color: "green" });
 const err = () => notifications.show({ message: "Fehler beim Speichern", color: "red" });
@@ -49,7 +63,6 @@ export default function StammdatenPage() {
           <Tabs.Tab value="properties">Objekte</Tabs.Tab>
           <Tabs.Tab value="units">Mieteinheiten</Tabs.Tab>
           <Tabs.Tab value="tenants">Mieter</Tabs.Tab>
-          <Tabs.Tab value="categories">Kostenarten</Tabs.Tab>
           <Tabs.Tab value="configs">Umlageschlüssel</Tabs.Tab>
         </Tabs.List>
 
@@ -62,9 +75,6 @@ export default function StammdatenPage() {
         <Tabs.Panel value="tenants" pt="md">
           <TenantsTab />
         </Tabs.Panel>
-        <Tabs.Panel value="categories" pt="md">
-          <CategoriesTab />
-        </Tabs.Panel>
         <Tabs.Panel value="configs" pt="md">
           <ConfigsTab />
         </Tabs.Panel>
@@ -76,18 +86,20 @@ export default function StammdatenPage() {
 /* ---------- Objekte ---------- */
 function PropertiesTab() {
   const { list, create, update, remove } = useCrud<Property>("/properties", "properties");
+  const { hideTest } = useTestData();
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<Property | null>(null);
-  const [form, setForm] = useState({ name: "", street: "", zip_code: "", city: "" });
+  const [del, setDel] = useState<Property | null>(null);
+  const [form, setForm] = useState({ name: "", street: "", zip_code: "", city: "", is_test: false });
 
   const openCreate = () => {
     setEdit(null);
-    setForm({ name: "", street: "", zip_code: "", city: "" });
+    setForm({ name: "", street: "", zip_code: "", city: "", is_test: false });
     setOpen(true);
   };
   const openEdit = (p: Property) => {
     setEdit(p);
-    setForm({ name: p.name, street: p.street, zip_code: p.zip_code, city: p.city });
+    setForm({ name: p.name, street: p.street, zip_code: p.zip_code, city: p.city, is_test: Boolean(p.is_test) });
     setOpen(true);
   };
   const save = () => {
@@ -113,7 +125,7 @@ function PropertiesTab() {
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {(list.data ?? []).map((p) => (
+          {visibleProperties(list.data ?? [], hideTest).map((p) => (
             <Table.Tr key={p.id}>
               <Table.Td>{p.name}</Table.Td>
               <Table.Td>
@@ -128,7 +140,7 @@ function PropertiesTab() {
                     size="compact-xs"
                     variant="light"
                     color="red"
-                    onClick={() => remove.mutate(p.id)}
+                    onClick={() => setDel(p)}
                   >
                     Löschen
                   </Button>
@@ -138,6 +150,17 @@ function PropertiesTab() {
           ))}
         </Table.Tbody>
       </Table>
+
+      <ConfirmDeleteModal
+        opened={!!del}
+        message={`Objekt „${del?.name}“ mit allen zugehörigen Daten (Mieteinheiten, Mieter, Kostenarten, Rechnungen, Zähler) wird dauerhaft gelöscht.`}
+        confirmText={del?.name ?? ""}
+        onClose={() => setDel(null)}
+        onConfirm={() => {
+          if (del) remove.mutate(del.id);
+          setDel(null);
+        }}
+      />
 
       <Modal opened={open} onClose={() => setOpen(false)} title={edit ? "Objekt ändern" : "Neues Objekt"}>
         <Stack>
@@ -163,6 +186,11 @@ function PropertiesTab() {
               onChange={(e) => setForm({ ...form, city: e.currentTarget.value })}
             />
           </Group>
+          <Checkbox
+            label="Testdaten (in Übersicht/Dropdowns ausblendbar)"
+            checked={form.is_test}
+            onChange={(e) => setForm({ ...form, is_test: e.currentTarget.checked })}
+          />
           <Button onClick={save}>Speichern</Button>
         </Stack>
       </Modal>
@@ -174,8 +202,10 @@ function PropertiesTab() {
 function UnitsTab() {
   const { list, create, update, remove } = useCrud<LeaseUnit>("/lease-units", "lease-units");
   const props = useCrud<Property>("/properties", "properties");
+  const { hideTest } = useTestData();
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<LeaseUnit | null>(null);
+  const [del, setDel] = useState<LeaseUnit | null>(null);
   const [form, setForm] = useState({ property_id: "", designation: "", living_area: "", extra_area: "" });
 
   const openCreate = () => {
@@ -207,12 +237,14 @@ function UnitsTab() {
     if (edit) update.mutate({ id: edit.id, data: payload }, { onSuccess: done, onError: err });
     else create.mutate(payload, { onSuccess: done, onError: err });
   };
-  const units = (list.data ?? []).slice();
-  const grouped = (props.list.data ?? [])
+  const allProps = props.list.data ?? [];
+  const visProps = visibleProperties(allProps, hideTest);
+  const testIds = testPropertyIds(allProps);
+  const grouped = visProps
     .slice()
     .sort((a, b) => a.name.localeCompare(b.name, "de"))
     .map((p) => {
-      const gUnits = units
+      const gUnits = visibleUnits(list.data ?? [], testIds)
         .filter((u) => u.property_id === p.id)
         .sort((a, b) => a.designation.localeCompare(b.designation, "de"));
       return {
@@ -265,7 +297,7 @@ function UnitsTab() {
                       <Button size="compact-xs" variant="light" onClick={() => openEdit(u)}>
                         Ändern
                       </Button>
-                      <Button size="compact-xs" variant="light" color="red" onClick={() => remove.mutate(u.id)}>
+                      <Button size="compact-xs" variant="light" color="red" onClick={() => setDel(u)}>
                         Löschen
                       </Button>
                     </Group>
@@ -277,11 +309,22 @@ function UnitsTab() {
         </Stack>
       ))}
 
+      <ConfirmDeleteModal
+        opened={!!del}
+        message={`Mieteinheit „${del?.designation}“ samt zugehöriger Mieter und Zähler wird dauerhaft gelöscht.`}
+        confirmText={del?.designation ?? ""}
+        onClose={() => setDel(null)}
+        onConfirm={() => {
+          if (del) remove.mutate(del.id);
+          setDel(null);
+        }}
+      />
+
       <Modal opened={open} onClose={() => setOpen(false)} title={edit ? "Mieteinheit ändern" : "Neue Mieteinheit"}>
         <Stack>
           <Select
             label="Objekt"
-            data={(props.list.data ?? []).map((p) => ({ value: String(p.id), label: p.name }))}
+            data={visProps.map((p) => ({ value: String(p.id), label: p.name }))}
             value={form.property_id || null}
             onChange={(v) => setForm({ ...form, property_id: v ?? "" })}
           />
@@ -312,24 +355,40 @@ function UnitsTab() {
 }
 
 /* ---------- Mieter ---------- */
-function TenantsTab() {
+export function TenantsTab() {
   const { list, create, update, remove } = useCrud<Tenant>("/tenants", "tenants");
   const units = useCrud<LeaseUnit>("/lease-units", "lease-units");
   const props = useCrud<Property>("/properties", "properties");
+  const { hideTest } = useTestData();
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<Tenant | null>(null);
+  const [del, setDel] = useState<Tenant | null>(null);
+  const [hideOld, setHideOld] = useState(false);
   const [form, setForm] = useState({
     lease_unit_id: "",
     name: "",
     move_in: "",
     move_out: "",
     monthly_advance: "",
+    phone: "",
+    email: "",
     advances: [{ valid_from: "", amount: "" }],
+    monthly_costs: [{ name: "", amount: "" }],
   });
 
   const openCreate = () => {
     setEdit(null);
-    setForm({ lease_unit_id: "", name: "", move_in: "", move_out: "", monthly_advance: "", advances: [{ valid_from: "", amount: "" }] });
+    setForm({
+      lease_unit_id: "",
+      name: "",
+      move_in: "",
+      move_out: "",
+      monthly_advance: "",
+      phone: "",
+      email: "",
+      advances: [{ valid_from: "", amount: "" }],
+      monthly_costs: [{ name: "", amount: "" }],
+    });
     setOpen(true);
   };
   const openEdit = (t: Tenant) => {
@@ -338,13 +397,20 @@ function TenantsTab() {
       t.advances && t.advances.length
         ? t.advances.map((a) => ({ valid_from: a.valid_from, amount: String(a.amount) }))
         : [{ valid_from: t.move_in, amount: String(t.monthly_advance) }];
+    const costs =
+      t.monthly_costs && t.monthly_costs.length
+        ? t.monthly_costs.map((c) => ({ name: c.name, amount: String(c.amount) }))
+        : [{ name: "", amount: "" }];
     setForm({
       lease_unit_id: String(t.lease_unit_id),
       name: t.name,
       move_in: t.move_in,
       move_out: t.move_out ?? "",
       monthly_advance: String(t.monthly_advance),
+      phone: t.phone ?? "",
+      email: t.email ?? "",
       advances,
+      monthly_costs: costs,
     });
     setOpen(true);
   };
@@ -353,21 +419,32 @@ function TenantsTab() {
   const addAdvance = () => setForm((f) => ({ ...f, advances: [...f.advances, { valid_from: "", amount: "" }] }));
   const removeAdvance = (idx: number) =>
     setForm((f) => ({ ...f, advances: f.advances.filter((_, i) => i !== idx) }));
+  const setCost = (idx: number, patch: Partial<{ name: string; amount: string }>) =>
+    setForm((f) => ({ ...f, monthly_costs: f.monthly_costs.map((c, i) => (i === idx ? { ...c, ...patch } : c)) }));
+  const addCost = () => setForm((f) => ({ ...f, monthly_costs: [...f.monthly_costs, { name: "", amount: "" }] }));
+  const removeCost = (idx: number) =>
+    setForm((f) => ({ ...f, monthly_costs: f.monthly_costs.filter((_, i) => i !== idx) }));
 
   const save = () => {
     const validAdvances = form.advances
       .filter((a) => a.valid_from)
       .map((a) => ({ valid_from: a.valid_from, amount: a.amount || "0" }))
       .sort((a, b) => a.valid_from.localeCompare(b.valid_from));
+    const validCosts = form.monthly_costs
+      .filter((c) => c.name.trim())
+      .map((c) => ({ name: c.name.trim(), amount: c.amount || "0" }));
     const payload = {
       lease_unit_id: Number(form.lease_unit_id),
       name: form.name,
       move_in: form.move_in,
       move_out: form.move_out || null,
       monthly_advance: form.monthly_advance || "0",
+      phone: form.phone || null,
+      email: form.email || null,
       advances: validAdvances.length
         ? validAdvances
         : [{ valid_from: form.move_in, amount: form.monthly_advance || "0" }],
+      monthly_costs: validCosts,
     };
     const done = () => {
       setOpen(false);
@@ -376,67 +453,150 @@ function TenantsTab() {
     if (edit) update.mutate({ id: edit.id, data: payload }, { onSuccess: done, onError: err });
     else create.mutate(payload, { onSuccess: done, onError: err });
   };
-  const unitLabel = (id: number) => {
-    const u = units.list.data?.find((x) => x.id === id);
-    if (!u) return "";
-    const p = props.list.data?.find((pp) => pp.id === u.property_id);
-    return p ? `${p.name} · ${u.designation}` : u.designation;
-  };
+  const unitDesignation = (id: number) => units.list.data?.find((x) => x.id === id)?.designation ?? "";
+  const allProps = props.list.data ?? [];
+  const testIds = testPropertyIds(allProps);
+  const grouped = groupTenantsByProperty(
+    visibleProperties(allProps, hideTest),
+    visibleTenants(list.data ?? [], units.list.data ?? [], testIds),
+    visibleUnits(units.list.data ?? [], testIds),
+    hideOld,
+  );
 
   return (
     <>
       <Group mb="sm">
         <Button onClick={openCreate}>Neuer Mieter</Button>
+        <Checkbox
+          label="Alte Mieter ausblenden"
+          checked={hideOld}
+          onChange={(e) => setHideOld(e.currentTarget.checked)}
+        />
       </Group>
-      <Table striped highlightOnHover>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Name</Table.Th>
-            <Table.Th>Einheit</Table.Th>
-            <Table.Th>Einzug</Table.Th>
-            <Table.Th>Auszug</Table.Th>
-            <Table.Th>Vorauszahlung €/Monat</Table.Th>
-            <Table.Th></Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {(list.data ?? []).map((t) => (
-            <Table.Tr key={t.id}>
-              <Table.Td>{t.name}</Table.Td>
-              <Table.Td>{unitLabel(t.lease_unit_id)}</Table.Td>
-              <Table.Td>{t.move_in}</Table.Td>
-              <Table.Td>{t.move_out ?? "—"}</Table.Td>
-              <Table.Td>
-                {fmt(t.monthly_advance, 2)}
-                {t.advances && t.advances.length > 1 && (
-                  <Badge variant="light" size="sm" ml={4}>
-                    {t.advances.length} Zeiträume
-                  </Badge>
-                )}
-              </Table.Td>
-              <Table.Td>
-                <Group gap="xs" justify="flex-end">
-                  <Button size="compact-xs" variant="light" onClick={() => openEdit(t)}>
-                    Ändern
-                  </Button>
-                  <Button size="compact-xs" variant="light" color="red" onClick={() => remove.mutate(t.id)}>
-                    Löschen
-                  </Button>
-                </Group>
-              </Table.Td>
-            </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </Table>
+      {grouped.length === 0 && <Text c="dimmed">Keine Mieter vorhanden.</Text>}
+
+      {grouped.map(({ property, tenants: gTenants }) => (
+        <Stack key={property.id} mb="lg">
+          <Group>
+            <Title order={5}>{property.name}</Title>
+            <Badge variant="light" size="sm">
+              {gTenants.length} Mieter
+            </Badge>
+          </Group>
+          <Table striped highlightOnHover>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Name</Table.Th>
+                <Table.Th>Einheit</Table.Th>
+                <Table.Th>Einzug</Table.Th>
+                <Table.Th>Auszug</Table.Th>
+                <Table.Th>Vorauszahlung €/Monat</Table.Th>
+                <Table.Th>Monatskosten €/Monat</Table.Th>
+                <Table.Th></Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {gTenants.map((t) => {
+                const contact = contactInfo(t);
+                return (
+                  <Table.Tr key={t.id} style={t.move_out ? { opacity: 0.45 } : undefined}>
+                    <Table.Td>
+                      {contact.email || contact.phone ? (
+                        <Tooltip
+                          label={
+                            <Stack gap={2}>
+                              {contact.email && <Text size="sm">E-Mail: {contact.email}</Text>}
+                              {contact.phone && <Text size="sm">Telefon: {contact.phone}</Text>}
+                            </Stack>
+                          }
+                          withArrow
+                        >
+                          <span>{t.name}</span>
+                        </Tooltip>
+                      ) : (
+                        t.name
+                      )}
+                    </Table.Td>
+                    <Table.Td>{unitDesignation(t.lease_unit_id)}</Table.Td>
+                    <Table.Td>{t.move_in}</Table.Td>
+                    <Table.Td>{t.move_out ?? "—"}</Table.Td>
+                    <Table.Td>
+                      <Tooltip
+                        label={
+                          <Stack gap={4} miw={190}>
+                            {advanceHistory(t).map((a, idx) => (
+                              <Group key={idx} justify="space-between" gap="xl" wrap="nowrap">
+                                <Text size="sm">ab {a.valid_from}</Text>
+                                <Text size="sm" style={{ fontVariantNumeric: "tabular-nums" }}>
+                                  {fmt(a.amount, 2)} €
+                                </Text>
+                              </Group>
+                            ))}
+                          </Stack>
+                        }
+                        withArrow
+                      >
+                        <span style={{ cursor: "help" }}>
+                          {fmt(t.monthly_advance, 2)}
+                          {t.advances && t.advances.length > 1 && (
+                            <Badge variant="light" size="sm" ml={4}>
+                              {t.advances.length} Zeiträume
+                            </Badge>
+                          )}
+                        </span>
+                      </Tooltip>
+                    </Table.Td>
+                    <Table.Td>
+                      {monthlyTotalWithAdvance(t) > 0 ? (
+                        <Tooltip
+                          label={
+                            <Stack gap={4} miw={190}>
+                              {monthlyBreakdown(t).map((c) => (
+                                <Group key={c.name} justify="space-between" gap="xl" wrap="nowrap">
+                                  <Text size="sm">{c.name}</Text>
+                                  <Text size="sm" style={{ fontVariantNumeric: "tabular-nums" }}>
+                                    {fmt(c.amount, 2)} €
+                                  </Text>
+                                </Group>
+                              ))}
+                            </Stack>
+                          }
+                          withArrow
+                        >
+                          <Text style={{ cursor: "help" }}>
+                            {fmt(monthlyTotalWithAdvance(t), 2)}
+                          </Text>
+                        </Tooltip>
+                      ) : (
+                        "—"
+                      )}
+                    </Table.Td>
+                    <Table.Td>
+                      <Group gap="xs" justify="flex-end">
+                        <Button size="compact-xs" variant="light" onClick={() => openEdit(t)}>
+                          Ändern
+                        </Button>
+                        <Button size="compact-xs" variant="light" color="red" onClick={() => setDel(t)}>
+                          Löschen
+                        </Button>
+                      </Group>
+                    </Table.Td>
+                  </Table.Tr>
+                );
+              })}
+            </Table.Tbody>
+          </Table>
+        </Stack>
+      ))}
 
       <Modal opened={open} onClose={() => setOpen(false)} title={edit ? "Mieter ändern" : "Neuer Mieter"}>
         <Stack>
           <Select
             label="Mieteinheit"
-            data={(units.list.data ?? []).map((u) => {
-              const p = props.list.data?.find((pp) => pp.id === u.property_id);
-              return { value: String(u.id), label: p ? `${p.name} · ${u.designation}` : u.designation };
-            })}
+            data={unitOptions(
+              visibleUnits(units.list.data ?? [], testIds),
+              visibleProperties(props.list.data ?? [], hideTest),
+            )}
             value={form.lease_unit_id || null}
             onChange={(v) => setForm({ ...form, lease_unit_id: v ?? "" })}
           />
@@ -457,6 +617,18 @@ function TenantsTab() {
               label="Auszug (leer = wohnt noch)"
               value={form.move_out}
               onChange={(e) => setForm({ ...form, move_out: e.currentTarget.value })}
+            />
+          </Group>
+          <Group grow>
+            <TextInput
+              label="Telefon"
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.currentTarget.value })}
+            />
+            <TextInput
+              label="E-Mail"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.currentTarget.value })}
             />
           </Group>
 
@@ -486,131 +658,62 @@ function TenantsTab() {
             + Zeitraum hinzufügen
           </Button>
 
-          <Button onClick={save}>Speichern</Button>
-        </Stack>
-      </Modal>
-    </>
-  );
-}
-
-/* ---------- Kostenarten ---------- */
-function CategoriesTab() {
-  const { list, create, update, remove } = useCrud<CostCategory>("/cost-categories", "cost-categories");
-  const [open, setOpen] = useState(false);
-  const [edit, setEdit] = useState<CostCategory | null>(null);
-  const [form, setForm] = useState({ code: "", name: "", default_allocation_key: "NONE", is_active: true });
-
-  const openCreate = () => {
-    setEdit(null);
-    setForm({ code: "", name: "", default_allocation_key: "NONE", is_active: true });
-    setOpen(true);
-  };
-  const openEdit = (c: CostCategory) => {
-    setEdit(c);
-    setForm({
-      code: c.code,
-      name: c.name,
-      default_allocation_key: c.default_allocation_key,
-      is_active: c.is_active,
-    });
-    setOpen(true);
-  };
-  const save = () => {
-    const done = () => {
-      setOpen(false);
-      ok("Gespeichert");
-    };
-    if (edit)
-      update.mutate({ id: edit.id, data: { ...form, code: undefined } }, { onSuccess: done, onError: err });
-    else create.mutate(form, { onSuccess: done, onError: err });
-  };
-
-  return (
-    <>
-      <Group mb="sm">
-        <Button onClick={openCreate}>Neue Kostenart</Button>
-      </Group>
-      <Table striped highlightOnHover>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Code</Table.Th>
-            <Table.Th>Name</Table.Th>
-            <Table.Th>Default-Umlage</Table.Th>
-            <Table.Th>Aktiv</Table.Th>
-            <Table.Th></Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {(list.data ?? []).map((c) => (
-            <Table.Tr key={c.id}>
-              <Table.Td>{c.code}</Table.Td>
-              <Table.Td>{c.name}</Table.Td>
-              <Table.Td>
-                <Badge variant="light">{KEY_LABEL[c.default_allocation_key] ?? c.default_allocation_key}</Badge>
-              </Table.Td>
-              <Table.Td>{c.is_active ? "ja" : "nein"}</Table.Td>
-              <Table.Td>
-                <Group gap="xs" justify="flex-end">
-                  <Button size="compact-xs" variant="light" onClick={() => openEdit(c)}>
-                    Ändern
-                  </Button>
-                  <Button size="compact-xs" variant="light" color="red" onClick={() => remove.mutate(c.id)}>
-                    Löschen
-                  </Button>
-                </Group>
-              </Table.Td>
-            </Table.Tr>
+          <Title order={6}>Monatliche Kosten (z. B. Kaltmiete, Heizkosten – nicht umlagefähig)</Title>
+          {form.monthly_costs.map((c, idx) => (
+            <Group key={idx} grow>
+              <TextInput
+                label="Bezeichnung"
+                placeholder="z. B. Kaltmiete"
+                value={c.name}
+                onChange={(e) => setCost(idx, { name: e.currentTarget.value })}
+              />
+              <NumberInput
+                label="Betrag €/Monat"
+                value={c.amount}
+                onChange={(v) => setCost(idx, { amount: String(v ?? "") })}
+                decimalScale={2}
+              />
+              {form.monthly_costs.length > 1 && (
+                <Button variant="light" color="red" mt="xl" onClick={() => removeCost(idx)}>
+                  ✕
+                </Button>
+              )}
+            </Group>
           ))}
-        </Table.Tbody>
-      </Table>
+          <Button variant="light" onClick={addCost}>
+            + Kosten hinzufügen
+          </Button>
 
-      <Modal opened={open} onClose={() => setOpen(false)} title={edit ? "Kostenart ändern" : "Neue Kostenart"}>
-        <Stack>
-          <TextInput
-            label="Code (eindeutig, z. B. grundsteuer)"
-            value={form.code}
-            disabled={!!edit}
-            onChange={(e) => setForm({ ...form, code: e.currentTarget.value })}
-          />
-          <TextInput
-            label="Name"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.currentTarget.value })}
-          />
-          <Select
-            label="Default-Umlageschlüssel"
-            data={ALLOCATION_KEYS}
-            value={form.default_allocation_key}
-            onChange={(v) => setForm({ ...form, default_allocation_key: v ?? "NONE" })}
-          />
-          <Checkbox
-            label="Aktiv"
-            checked={form.is_active}
-            onChange={(e) => setForm({ ...form, is_active: e.currentTarget.checked })}
-          />
           <Button onClick={save}>Speichern</Button>
         </Stack>
       </Modal>
+
+      <ConfirmDeleteModal
+        opened={!!del}
+        message={`Mieter „${del?.name}“ mit Vorauszahlungs-Historie und Monatskosten wird dauerhaft gelöscht.`}
+        confirmText={del?.name ?? ""}
+        onClose={() => setDel(null)}
+        onConfirm={() => {
+          if (del) remove.mutate(del.id);
+          setDel(null);
+        }}
+      />
     </>
   );
 }
 
 /* ---------- Umlageschlüssel (je Objekt) ---------- */
-function ConfigsTab() {
+export function ConfigsTab() {
   const qc = useQueryClient();
   const props = useCrud<Property>("/properties", "properties");
-  const cats = useCrud<CostCategory>("/cost-categories", "cost-categories");
-  const [propertyId, setPropertyId] = useState<string | null>(null);
-  const [key, setKey] = useState<string>("WF");
-  const [catId, setCatId] = useState<string | null>(null);
-  const [sortOrder, setSortOrder] = useState<string>("");
+  const { hideTest } = useTestData();
+  const [del, setDel] = useState<AllocationConfig | null>(null);
+  // Pro Objekt eine eigene Eingabezeile für „Hinzufügen“
+  const [adds, setAdds] = useState<Record<number, { name: string; key: string }>>({});
 
   const configs = useQuery({
-    queryKey: ["allocation-configs", propertyId],
-    enabled: !!propertyId,
-    queryFn: async () =>
-      (await api.get<AllocationConfig[]>("/allocation-configs", { params: { property_id: Number(propertyId) } }))
-        .data,
+    queryKey: ["allocation-configs"],
+    queryFn: async () => (await api.get<AllocationConfig[]>("/allocation-configs")).data,
   });
 
   const createConfig = useMutation({
@@ -630,106 +733,184 @@ function ConfigsTab() {
     },
     onError: err,
   });
+  const renameCategory = useMutation({
+    mutationFn: ({ id, name }: { id: number; name: string }) =>
+      api.patch(`/cost-categories/${id}`, { name }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["allocation-configs"] });
+      qc.invalidateQueries({ queryKey: ["cost-categories"] });
+      ok("Gespeichert");
+    },
+    onError: err,
+  });
   const deleteConfig = useMutation({
     mutationFn: (id: number) => api.delete(`/allocation-configs/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["allocation-configs"] }),
   });
+  // Tauscht die Sortierung zweier benachbarter Zeilen (Hoch/Runter-Buttons).
+  const reorderConfigs = useMutation({
+    mutationFn: async ({ a, b }: { a: AllocationConfig; b: AllocationConfig }) => {
+      await api.patch(`/allocation-configs/${a.id}`, { sort_order: b.sort_order });
+      await api.patch(`/allocation-configs/${b.id}`, { sort_order: a.sort_order });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["allocation-configs"] }),
+  });
 
-  const configuredIds = new Set((configs.data ?? []).map((c) => c.cost_category_id));
-  const availableCats = (cats.list.data ?? []).filter((c) => !configuredIds.has(c.id));
-
-  const add = () => {
-    if (!propertyId || !catId) return;
+  const add = (propertyId: number) => {
+    const a = adds[propertyId];
+    const name = (a?.name ?? "").trim();
+    if (!name) return;
+    const arr = (configs.data ?? []).filter((c) => c.property_id === propertyId);
+    const nextOrder = arr.length ? Math.max(...arr.map((c) => c.sort_order)) + 1 : 1;
     createConfig.mutate({
-      property_id: Number(propertyId),
-      cost_category_id: Number(catId),
-      allocation_key: key,
-      sort_order: Number(sortOrder || 0),
+      property_id: propertyId,
+      cost_category_name: name,
+      allocation_key: a?.key ?? "WF",
+      sort_order: nextOrder,
     });
-    setCatId(null);
+    setAdds((prev) => ({ ...prev, [propertyId]: { name: "", key: a?.key ?? "WF" } }));
   };
+
+  const move = (propertyId: number, idx: number, dir: -1 | 1) => {
+    const arr = (configs.data ?? []).filter((c) => c.property_id === propertyId);
+    const j = idx + dir;
+    if (j < 0 || j >= arr.length) return;
+    reorderConfigs.mutate({ a: arr[idx], b: arr[j] });
+  };
+
+  const grouped = visibleProperties(props.list.data ?? [], hideTest)
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, "de"))
+    .map((p) => {
+      const gConfigs = (configs.data ?? [])
+        .filter((c) => c.property_id === p.id)
+        .sort((a, b) => a.sort_order - b.sort_order);
+      return { property: p, configs: gConfigs };
+    });
 
   return (
     <Stack>
-      <Group>
-        <Select
-          label="Objekt"
-          placeholder="Objekt wählen"
-          data={(props.list.data ?? []).map((p) => ({ value: String(p.id), label: p.name }))}
-          value={propertyId}
-          onChange={setPropertyId}
-          w={280}
-        />
-      </Group>
+      {grouped.map(({ property, configs: gConfigs }) => {
+        const a = adds[property.id] ?? { name: "", key: "WF" };
+        const total = gConfigs.length;
+        return (
+          <Stack key={property.id} mb="lg">
+            <Group>
+              <Title order={5}>{property.name}</Title>
+              <Badge variant="light" size="sm">
+                {total} {total === 1 ? "Kostenart" : "Kostenarten"}
+              </Badge>
+            </Group>
 
-      {propertyId && (
-        <>
-          <Table striped highlightOnHover>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Kostenart</Table.Th>
-                <Table.Th>Umlageschlüssel</Table.Th>
-                <Table.Th>Sortierung</Table.Th>
-                <Table.Th></Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {(configs.data ?? []).map((c) => (
-                <Table.Tr key={c.id}>
-                  <Table.Td>{c.category_name ?? c.cost_category_id}</Table.Td>
-                  <Table.Td>
-                    <Select
-                      size="xs"
-                      w={220}
-                      data={ALLOCATION_KEYS}
-                      value={c.allocation_key}
-                      onChange={(v) => v && updateConfig.mutate({ id: c.id, data: { allocation_key: v } })}
-                    />
-                  </Table.Td>
-                  <Table.Td>{c.sort_order}</Table.Td>
-                  <Table.Td>
-                    <Button
-                      size="compact-xs"
-                      variant="light"
-                      color="red"
-                      onClick={() => deleteConfig.mutate(c.id)}
-                    >
-                      Entfernen
-                    </Button>
-                  </Table.Td>
+            <Table striped highlightOnHover>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Reihenfolge</Table.Th>
+                  <Table.Th>Kostenart</Table.Th>
+                  <Table.Th>Umlageschlüssel</Table.Th>
+                  <Table.Th></Table.Th>
                 </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+              </Table.Thead>
+              <Table.Tbody>
+                {gConfigs.map((c, idx) => (
+                  <Table.Tr key={c.id}>
+                    <Table.Td>
+                      <Group gap={10} wrap="nowrap">
+                        <Text size="sm" w={24} ta="center">
+                          {c.sort_order}
+                        </Text>
+                        <Group gap={4} wrap="nowrap">
+                          <Button
+                            size="compact-xs"
+                            variant="light"
+                            aria-label="nach oben"
+                            disabled={idx === 0}
+                            onClick={() => move(property.id, idx, -1)}
+                          >
+                            ▲
+                          </Button>
+                          <Button
+                            size="compact-xs"
+                            variant="light"
+                            aria-label="nach unten"
+                            disabled={idx === total - 1}
+                            onClick={() => move(property.id, idx, 1)}
+                          >
+                            ▼
+                          </Button>
+                        </Group>
+                      </Group>
+                    </Table.Td>
+                    <Table.Td>
+                      <InlineEdit
+                        value={c.category_name ?? String(c.cost_category_id)}
+                        onSave={(name) => renameCategory.mutate({ id: c.cost_category_id, name })}
+                      />
+                    </Table.Td>
+                    <Table.Td>
+                      <Select
+                        size="xs"
+                        w={220}
+                        data={ALLOCATION_KEYS}
+                        value={c.allocation_key}
+                        onChange={(v) => v && updateConfig.mutate({ id: c.id, data: { allocation_key: v } })}
+                      />
+                    </Table.Td>
+                    <Table.Td>
+                      <Button
+                        size="compact-xs"
+                        variant="light"
+                        color="red"
+                        onClick={() => setDel(c)}
+                      >
+                        Entfernen
+                      </Button>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
 
-          <Group align="flex-end">
-            <Select
-              label="Kostenart hinzufügen"
-              placeholder="Kostenart"
-              data={availableCats.map((c) => ({ value: String(c.id), label: c.name }))}
-              value={catId}
-              onChange={setCatId}
-              w={280}
-            />
-            <Select
-              label="Umlageschlüssel"
-              data={ALLOCATION_KEYS}
-              value={key}
-              onChange={(v) => setKey(v ?? "WF")}
-              w={220}
-            />
-            <NumberInput
-              label="Sortierung"
-              value={sortOrder}
-              onChange={(v) => setSortOrder(String(v ?? ""))}
-              w={120}
-            />
-            <Button onClick={add} disabled={!catId}>
-              Hinzufügen
-            </Button>
-          </Group>
-        </>
-      )}
+            <Group align="flex-end">
+              <TextInput
+                label="Kostenart (Name)"
+                placeholder="z. B. Grundsteuer"
+                value={a.name}
+                onChange={(e) => {
+                  const name = e.currentTarget.value;
+                  setAdds((prev) => ({ ...prev, [property.id]: { ...a, name } }));
+                }}
+                w={280}
+              />
+              <Select
+                label="Umlageschlüssel"
+                data={ALLOCATION_KEYS}
+                value={a.key}
+                onChange={(v) =>
+                  setAdds((prev) => ({ ...prev, [property.id]: { ...a, key: v ?? "WF" } }))
+                }
+                w={220}
+              />
+              <Button onClick={() => add(property.id)} disabled={!a.name.trim()}>
+                Hinzufügen
+              </Button>
+            </Group>
+          </Stack>
+        );
+      })}
+
+      <ConfirmDeleteModal
+        opened={!!del}
+        title="Umlageschlüssel entfernen?"
+        message={`Umlage-Konfiguration für Kostenart „${del?.category_name}“ wird entfernt (Kostenart bleibt erhalten).`}
+        confirmText={del?.category_name ?? ""}
+        confirmLabel="Entfernen"
+        onClose={() => setDel(null)}
+        onConfirm={() => {
+          if (del) deleteConfig.mutate(del.id);
+          setDel(null);
+        }}
+      />
     </Stack>
   );
 }

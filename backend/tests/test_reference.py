@@ -14,15 +14,15 @@ from tests import helpers
 def _build_objekt1_2013(session):
     prop = helpers.make_property(session, "Objekt 1")
 
-    trink = helpers.make_category(session, "trinkwasser", "Trinkwasser", AllocationKey.CONSUMPTION)
-    schmutz = helpers.make_category(session, "schmutzwasser", "Schmutzwasser", AllocationKey.CONSUMPTION)
-    grund = helpers.make_category(session, "grundsteuer", "Grundsteuer", AllocationKey.NF)
-    gebaeude = helpers.make_category(session, "gebaeudeversicherung", "Gebäudebrand-/Elementarversicherung", AllocationKey.NF)
-    haft = helpers.make_category(session, "haftpflicht", "Haftpflichtversicherung", AllocationKey.NF)
-    nieder = helpers.make_category(session, "niederschlagswasser", "Niederschlagswassergebühr", AllocationKey.NF)
-    gartenpflege = helpers.make_category(session, "gartenpflege", "Gartenpflege", AllocationKey.WF)
-    hauslicht = helpers.make_category(session, "hausbeleuchtung", "Hausbeleuchtung", AllocationKey.WF)
-    schornstein = helpers.make_category(session, "schornstein", "Schornstein/Wartung", AllocationKey.WF)
+    trink = helpers.make_category(session, prop, "trinkwasser", "Trinkwasser", AllocationKey.CONSUMPTION)
+    schmutz = helpers.make_category(session, prop, "schmutzwasser", "Schmutzwasser", AllocationKey.CONSUMPTION)
+    grund = helpers.make_category(session, prop, "grundsteuer", "Grundsteuer", AllocationKey.NF)
+    gebaeude = helpers.make_category(session, prop, "gebaeudeversicherung", "Gebäudebrand-/Elementarversicherung", AllocationKey.NF)
+    haft = helpers.make_category(session, prop, "haftpflicht", "Haftpflichtversicherung", AllocationKey.NF)
+    nieder = helpers.make_category(session, prop, "niederschlagswasser", "Niederschlagswassergebühr", AllocationKey.NF)
+    gartenpflege = helpers.make_category(session, prop, "gartenpflege", "Gartenpflege", AllocationKey.WF)
+    hauslicht = helpers.make_category(session, prop, "hausbeleuchtung", "Hausbeleuchtung", AllocationKey.WF)
+    schornstein = helpers.make_category(session, prop, "schornstein", "Schornstein/Wartung", AllocationKey.WF)
 
     for i, (cat, key) in enumerate(
         [

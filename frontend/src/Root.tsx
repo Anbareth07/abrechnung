@@ -1,6 +1,7 @@
-import { AppShell, Burger, Group, NavLink, Title } from "@mantine/core";
+import { AppShell, Burger, Checkbox, Group, NavLink, Title } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { useTestData } from "./context/TestDataContext";
 import StammdatenPage from "./pages/StammdatenPage";
 import InvoicesPage from "./pages/InvoicesPage";
 import MetersPage from "./pages/MetersPage";
@@ -19,6 +20,7 @@ export default function Root() {
   const [opened, { toggle }] = useDisclosure();
   const navigate = useNavigate();
   const location = useLocation();
+  const { hideTest, setHideTest } = useTestData();
 
   return (
     <AppShell
@@ -27,9 +29,16 @@ export default function Root() {
       padding="md"
     >
       <AppShell.Header>
-        <Group h="100%" px="md">
-          <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-          <Title order={3}>Nebenkostenabrechnung</Title>
+        <Group h="100%" px="md" justify="space-between">
+          <Group>
+            <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
+            <Title order={3}>Nebenkostenabrechnung</Title>
+          </Group>
+          <Checkbox
+            label="Testdaten ausblenden"
+            checked={hideTest}
+            onChange={(e) => setHideTest(e.currentTarget.checked)}
+          />
         </Group>
       </AppShell.Header>
 

@@ -9,8 +9,8 @@ from tests import helpers
 def _build_two_units(session):
     prop = helpers.make_property(session, "Testobjekt")
 
-    grund = helpers.make_category(session, "grundsteuer", "Grundsteuer", AllocationKey.NF)
-    pflege = helpers.make_category(session, "gartenpflege", "Gartenpflege", AllocationKey.WF)
+    grund = helpers.make_category(session, prop, "grundsteuer", "Grundsteuer", AllocationKey.NF)
+    pflege = helpers.make_category(session, prop, "gartenpflege", "Gartenpflege", AllocationKey.WF)
     helpers.make_config(session, prop, grund, AllocationKey.NF, 1)
     helpers.make_config(session, prop, pflege, AllocationKey.WF, 2)
 
@@ -71,6 +71,35 @@ def test_area_allocation_and_time_factor(session):
     halb_advance = engine_mod.money(Decimal("100") * factor * Decimal(12))
     assert halbjahr.advance_total == halb_advance
     assert halbjahr.saldo == engine_mod.money(halb_total - halb_advance)
+
+
+def test_wohnung_allocation_equal_split(session):
+    """Umlageschlüssel 'Wohnung': Kosten gehen 1:1 gleichmäßig auf jede belegte Einheit."""
+    prop = helpers.make_property(session, "Testobjekt")
+    wohn = helpers.make_category(session, prop, "wohnungskosten", "Wohnungskosten", AllocationKey.WOHNUNG)
+    helpers.make_config(session, prop, wohn, AllocationKey.WOHNUNG, 1)
+
+    u1 = helpers.make_unit(session, prop, "Wohnung 1", "80.0", "0.0")
+    u2 = helpers.make_unit(session, prop, "Wohnung 2", "40.0", "0.0")
+    helpers.make_unit(session, prop, "Wohnung 3 (leer)", "60.0", "0.0")  # leer → zählt nicht
+
+    helpers.make_tenant(session, u1, "Volljahr", date(2020, 1, 1), "100.00")
+    helpers.make_tenant(session, u2, "Halbjahr", date(2026, 7, 1), "100.00")
+
+    helpers.make_invoice(
+        session, prop, wohn, date(2026, 1, 1), date(2026, 12, 31),
+        [(date(2026, 1, 1), date(2026, 12, 31), "1200.00")],
+    )
+    session.commit()
+
+    result = engine_mod.compute_settlement(session, prop.id, 2026)
+    volljahr = next(ln for ln in result.tenant_lines if ln.name == "Volljahr")
+    halbjahr = next(ln for ln in result.tenant_lines if ln.name == "Halbjahr")
+
+    # 2 belegte Wohnungen → je 600 €, unabhängig von der Fläche; zeitanteilig beim Halbjahr
+    assert volljahr.breakdown["wohnungskosten"] == Decimal("600.00")
+    factor = Decimal(184) / Decimal(365)
+    assert halbjahr.breakdown["wohnungskosten"] == engine_mod.money(Decimal("600") * factor)
 
 
 def test_move_out_handling(session):

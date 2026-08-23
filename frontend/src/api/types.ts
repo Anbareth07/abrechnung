@@ -6,6 +6,7 @@ export interface Property {
   street: string;
   zip_code: string;
   city: string;
+  is_test?: boolean;
   created_at?: string;
 }
 
@@ -24,6 +25,12 @@ export interface TenantAdvance {
   amount: Money;
 }
 
+export interface MonthlyCost {
+  id?: number;
+  name: string;
+  amount: Money;
+}
+
 export interface Tenant {
   id: number;
   lease_unit_id: number;
@@ -31,11 +38,15 @@ export interface Tenant {
   move_in: string;
   move_out: string | null;
   monthly_advance: Money;
+  phone?: string | null;
+  email?: string | null;
   advances?: TenantAdvance[];
+  monthly_costs?: MonthlyCost[];
 }
 
 export interface CostCategory {
   id: number;
+  property_id: number;
   code: string;
   name: string;
   default_allocation_key: string;

@@ -13,7 +13,10 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { fmt } from "../api/client";
+import { ConfirmDeleteModal } from "../components/ConfirmDeleteModal";
+import { useTestData } from "../context/TestDataContext";
 import { useCrud } from "../hooks/useCrud";
+import { testPropertyIds, visibleProperties } from "../utils/testData";
 import type { Property, TechemRecord } from "../api/types";
 
 const KINDS = [
@@ -27,10 +30,12 @@ const err = () => notifications.show({ message: "Fehler beim Speichern", color: 
 export default function TechemPage() {
   const { list, create, update, remove } = useCrud<TechemRecord>("/techem", "techem");
   const props = useCrud<Property>("/properties", "properties");
+  const { hideTest } = useTestData();
   const [propertyFilter, setPropertyFilter] = useState<string | null>(null);
 
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<TechemRecord | null>(null);
+  const [del, setDel] = useState<TechemRecord | null>(null);
   const [form, setForm] = useState({
     property_id: "",
     kind: "GAS",
@@ -82,8 +87,11 @@ export default function TechemPage() {
   };
 
   const propName = (id: number) => props.list.data?.find((p) => p.id === id)?.name ?? "";
+  const testIds = testPropertyIds(props.list.data ?? []);
   const filtered = (list.data ?? []).filter(
-    (r) => !propertyFilter || r.property_id === Number(propertyFilter),
+    (r) =>
+      (!propertyFilter || r.property_id === Number(propertyFilter)) &&
+      (!hideTest || !testIds.has(r.property_id)),
   );
 
   const exportCsv = () => {
@@ -119,7 +127,7 @@ export default function TechemPage() {
           label="Objekt filter"
           placeholder="Objekt"
           clearable
-          data={(props.list.data ?? []).map((p) => ({ value: String(p.id), label: p.name }))}
+          data={visibleProperties(props.list.data ?? [], hideTest).map((p) => ({ value: String(p.id), label: p.name }))}
           value={propertyFilter}
           onChange={setPropertyFilter}
           w={280}
@@ -158,7 +166,7 @@ export default function TechemPage() {
                   <Button size="compact-xs" variant="light" onClick={() => openEdit(r)}>
                     Ändern
                   </Button>
-                  <Button size="compact-xs" variant="light" color="red" onClick={() => remove.mutate(r.id)}>
+                  <Button size="compact-xs" variant="light" color="red" onClick={() => setDel(r)}>
                     Löschen
                   </Button>
                 </Group>
@@ -172,7 +180,7 @@ export default function TechemPage() {
         <Stack>
           <Select
             label="Objekt"
-            data={(props.list.data ?? []).map((p) => ({ value: String(p.id), label: p.name }))}
+            data={visibleProperties(props.list.data ?? [], hideTest).map((p) => ({ value: String(p.id), label: p.name }))}
             value={form.property_id || null}
             onChange={(v) => setForm({ ...form, property_id: v ?? "" })}
           />
@@ -208,6 +216,17 @@ export default function TechemPage() {
           <Button onClick={save}>Speichern</Button>
         </Stack>
       </Modal>
+
+      <ConfirmDeleteModal
+        opened={!!del}
+        message={`Techem-Eintrag vom ${del?.invoice_date} (${del?.kind === "GAS" ? "Gas" : "Heizstrom"}) wird dauerhaft gelöscht.`}
+        confirmText="LÖSCHEN"
+        onClose={() => setDel(null)}
+        onConfirm={() => {
+          if (del) remove.mutate(del.id);
+          setDel(null);
+        }}
+      />
     </Stack>
   );
 }

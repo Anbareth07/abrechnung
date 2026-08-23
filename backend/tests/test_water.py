@@ -9,9 +9,9 @@ from tests import helpers
 def _build_objekt1(session):
     prop = helpers.make_property(session, "Objekt 1")
 
-    trink = helpers.make_category(session, "trinkwasser", "Trinkwasser", AllocationKey.CONSUMPTION)
-    schmutz = helpers.make_category(session, "schmutzwasser", "Schmutzwasser", AllocationKey.CONSUMPTION)
-    grund = helpers.make_category(session, "grundsteuer", "Grundsteuer", AllocationKey.NF)
+    trink = helpers.make_category(session, prop, "trinkwasser", "Trinkwasser", AllocationKey.CONSUMPTION)
+    schmutz = helpers.make_category(session, prop, "schmutzwasser", "Schmutzwasser", AllocationKey.CONSUMPTION)
+    grund = helpers.make_category(session, prop, "grundsteuer", "Grundsteuer", AllocationKey.NF)
 
     helpers.make_config(session, prop, trink, AllocationKey.CONSUMPTION, 1)
     helpers.make_config(session, prop, schmutz, AllocationKey.CONSUMPTION, 2)

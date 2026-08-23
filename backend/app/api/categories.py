@@ -1,3 +1,6 @@
+import re
+import unicodedata
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,16 +21,73 @@ router = APIRouter(prefix="/cost-categories", tags=["cost-categories"])
 config_router = APIRouter(prefix="/allocation-configs", tags=["allocation-configs"])
 
 
+def _slugify(name: str) -> str:
+    """Wandelt einen Namen in einen technischen Code um (z. B. 'Trinkwasser' → 'trinkwasser')."""
+    text = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    text = re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+    return text or "kategorie"
+
+
+def _unique_code(db: Session, name: str) -> str:
+    """Erzeugt einen eindeutigen Code aus dem Namen (bei Kollision '_2', '_3', …)."""
+    base = _slugify(name)
+    code, i = base, 2
+    while db.scalar(select(models.CostCategory).where(models.CostCategory.code == code)):
+        code = f"{base}_{i}"
+        i += 1
+    return code
+
+
+def _get_or_create_category(db: Session, property_id: int, name: str) -> models.CostCategory:
+    """Find-or-create einer Kostenart für ein Objekt (gleicher Name → wiederverwenden)."""
+    existing = db.scalar(
+        select(models.CostCategory).where(
+            models.CostCategory.property_id == property_id,
+            models.CostCategory.name == name,
+        )
+    )
+    if existing is not None:
+        return existing
+    obj = models.CostCategory(
+        property_id=property_id, name=name, code=_unique_code(db, name)
+    )
+    db.add(obj)
+    db.flush()
+    return obj
+
+
 @router.get("", response_model=list[CostCategoryRead])
-def list_categories(db: Session = Depends(get_db)):
-    return db.scalars(select(models.CostCategory).order_by(models.CostCategory.name)).all()
+def list_categories(
+    property_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    query = select(models.CostCategory)
+    if property_id is not None:
+        query = query.where(models.CostCategory.property_id == property_id)
+    return db.scalars(query.order_by(models.CostCategory.name)).all()
 
 
 @router.post("", response_model=CostCategoryRead, status_code=201)
 def create_category(payload: CostCategoryCreate, db: Session = Depends(get_db)):
-    if db.scalar(select(models.CostCategory).where(models.CostCategory.code == payload.code)):
+    if db.get(models.Property, payload.property_id) is None:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    if payload.code is not None and db.scalar(
+        select(models.CostCategory).where(models.CostCategory.code == payload.code)
+    ):
         raise HTTPException(409, "Kostenart-Code existiert bereits")
-    obj = models.CostCategory(**payload.model_dump())
+    data = payload.model_dump()
+    if not data.get("code"):
+        data["code"] = _unique_code(db, data["name"])
+    # Find-or-create je Objekt (gleicher Name → vorhandene Kostenart zurückgeben)
+    existing = db.scalar(
+        select(models.CostCategory).where(
+            models.CostCategory.property_id == data["property_id"],
+            models.CostCategory.name == data["name"],
+        )
+    )
+    if existing is not None:
+        return existing
+    obj = models.CostCategory(**data)
     db.add(obj)
     db.commit()
     db.refresh(obj)
@@ -88,17 +148,35 @@ def list_allocation_configs(property_id: int | None = None, db: Session = Depend
 def create_allocation_config(payload: AllocationConfigCreate, db: Session = Depends(get_db)):
     if db.get(models.Property, payload.property_id) is None:
         raise HTTPException(404, "Objekt nicht gefunden")
-    if db.get(models.CostCategory, payload.cost_category_id) is None:
-        raise HTTPException(404, "Kostenart nicht gefunden")
+    if payload.cost_category_id is None and not (payload.cost_category_name or "").strip():
+        raise HTTPException(422, "Kostenart (ID oder Name) erforderlich")
+
+    if (payload.cost_category_name or "").strip():
+        # Kostenart entsteht automatisch (objektgebunden, find-or-create)
+        cat = _get_or_create_category(db, payload.property_id, payload.cost_category_name.strip())
+        cost_category_id = cat.id
+    else:
+        cost_category_id = payload.cost_category_id
+        cat = db.get(models.CostCategory, cost_category_id)
+        if cat is None:
+            raise HTTPException(404, "Kostenart nicht gefunden")
+        if cat.property_id != payload.property_id:
+            raise HTTPException(409, "Kostenart gehört nicht zu diesem Objekt")
+
     exists = db.scalar(
         select(models.AllocationConfig).where(
             models.AllocationConfig.property_id == payload.property_id,
-            models.AllocationConfig.cost_category_id == payload.cost_category_id,
+            models.AllocationConfig.cost_category_id == cost_category_id,
         )
     )
     if exists:
         raise HTTPException(409, "Umlage-Konfiguration existiert bereits")
-    obj = models.AllocationConfig(**payload.model_dump())
+    obj = models.AllocationConfig(
+        property_id=payload.property_id,
+        cost_category_id=cost_category_id,
+        allocation_key=payload.allocation_key,
+        sort_order=payload.sort_order,
+    )
     db.add(obj)
     db.commit()
     db.refresh(obj)

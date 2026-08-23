@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PropertyRead(BaseModel):
@@ -13,6 +13,7 @@ class PropertyRead(BaseModel):
     street: str
     zip_code: str
     city: str
+    is_test: bool = False
     created_at: datetime
 
 
@@ -21,6 +22,7 @@ class PropertyCreate(BaseModel):
     street: str = ""
     zip_code: str = ""
     city: str = ""
+    is_test: bool = False
 
 
 class PropertyUpdate(BaseModel):
@@ -28,6 +30,7 @@ class PropertyUpdate(BaseModel):
     street: Optional[str] = None
     zip_code: Optional[str] = None
     city: Optional[str] = None
+    is_test: Optional[bool] = None
 
 
 class LeaseUnitRead(BaseModel):
@@ -67,6 +70,19 @@ class AdvanceCreate(BaseModel):
     amount: Decimal
 
 
+class MonthlyCostRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    amount: Decimal
+
+
+class MonthlyCostCreate(BaseModel):
+    name: str
+    amount: Decimal
+
+
 class TenantRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -76,7 +92,11 @@ class TenantRead(BaseModel):
     move_in: date
     move_out: Optional[date]
     monthly_advance: Decimal
-    advances: list[AdvanceRead] = []
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    # ORM-Relationship heißt "advance_payments" → Alias für from_attributes
+    advances: list[AdvanceRead] = Field(default=[], validation_alias="advance_payments")
+    monthly_costs: list[MonthlyCostRead] = []
 
 
 class TenantCreate(BaseModel):
@@ -85,7 +105,10 @@ class TenantCreate(BaseModel):
     move_in: date
     move_out: Optional[date] = None
     monthly_advance: Decimal = Decimal("0")
+    phone: Optional[str] = None
+    email: Optional[str] = None
     advances: list[AdvanceCreate] = []
+    monthly_costs: list[MonthlyCostCreate] = []
 
 
 class TenantUpdate(BaseModel):
@@ -94,4 +117,7 @@ class TenantUpdate(BaseModel):
     move_in: Optional[date] = None
     move_out: Optional[date] = None
     monthly_advance: Optional[Decimal] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
     advances: Optional[list[AdvanceCreate]] = None
+    monthly_costs: Optional[list[MonthlyCostCreate]] = None

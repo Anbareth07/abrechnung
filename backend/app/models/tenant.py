@@ -39,7 +39,7 @@ class LeaseUnit(Base):
 
 
 class Tenant(Base):
-    """Mieter mit Ein-/Auszugsdatum und monatlicher Vorauszahlung."""
+    """Mieter mit Ein-/Auszugsdatum, Vorauszahlung und Kontaktdaten."""
 
     __tablename__ = "tenants"
 
@@ -51,6 +51,8 @@ class Tenant(Base):
     move_in: Mapped[date] = mapped_column(Date, nullable=False)
     move_out: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     monthly_advance: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    phone: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
 
     lease_unit: Mapped["LeaseUnit"] = relationship(back_populates="tenants")
     settlement_lines: Mapped[List["SettlementLine"]] = relationship(
@@ -61,6 +63,28 @@ class Tenant(Base):
         cascade="all, delete-orphan",
         order_by="AdvancePayment.valid_from",
     )
+    monthly_costs: Mapped[List["MonthlyCost"]] = relationship(
+        back_populates="tenant", cascade="all, delete-orphan"
+    )
+
+
+class MonthlyCost(Base):
+    """Zusätzliche monatliche Kosten eines Mieters (z. B. Kaltmiete, Heizkosten).
+
+    Diese Posten sind rein informativ und fließen NICHT in die
+    Nebenkostenabrechnung ein.
+    """
+
+    __tablename__ = "monthly_costs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+
+    tenant: Mapped["Tenant"] = relationship(back_populates="monthly_costs")
 
 
 class AdvancePayment(Base):

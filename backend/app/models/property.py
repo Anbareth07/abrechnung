@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List
 
 import sqlalchemy as sa
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import Boolean, DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -20,6 +20,7 @@ class Property(Base):
     street: Mapped[str] = mapped_column(String(200), nullable=False)
     zip_code: Mapped[str] = mapped_column(String(10), nullable=False)
     city: Mapped[str] = mapped_column(String(100), nullable=False)
+    is_test: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     lease_units: Mapped[List["LeaseUnit"]] = relationship(
@@ -32,6 +33,9 @@ class Property(Base):
         back_populates="prop", cascade="all, delete-orphan"
     )
     allocation_configs: Mapped[List["AllocationConfig"]] = relationship(
+        back_populates="prop", cascade="all, delete-orphan"
+    )
+    cost_categories: Mapped[List["CostCategory"]] = relationship(
         back_populates="prop", cascade="all, delete-orphan"
     )
     settlements: Mapped[List["Settlement"]] = relationship(

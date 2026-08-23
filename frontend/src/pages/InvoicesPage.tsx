@@ -12,7 +12,10 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { ConfirmDeleteModal } from "../components/ConfirmDeleteModal";
+import { useTestData } from "../context/TestDataContext";
 import { useCrud } from "../hooks/useCrud";
+import { testPropertyIds, visibleProperties } from "../utils/testData";
 import type { CostCategory, Invoice, InvoiceItem, Property } from "../api/types";
 
 interface ItemDraft {
@@ -42,10 +45,12 @@ export default function InvoicesPage() {
   const { list, create, update, remove } = useCrud<Invoice>("/invoices", "invoices");
   const props = useCrud<Property>("/properties", "properties");
   const cats = useCrud<CostCategory>("/cost-categories", "cost-categories");
+  const { hideTest } = useTestData();
   const [propertyFilter, setPropertyFilter] = useState<string | null>(null);
 
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<Invoice | null>(null);
+  const [del, setDel] = useState<Invoice | null>(null);
   const [form, setForm] = useState({
     property_id: "",
     cost_category_id: "",
@@ -142,8 +147,11 @@ export default function InvoicesPage() {
     else create.mutate(payload, { onSuccess: done, onError: err });
   };
 
+  const testIds = testPropertyIds(props.list.data ?? []);
   const filtered = (list.data ?? []).filter(
-    (inv) => !propertyFilter || inv.property_id === Number(propertyFilter),
+    (inv) =>
+      (!propertyFilter || inv.property_id === Number(propertyFilter)) &&
+      (!hideTest || !testIds.has(inv.property_id)),
   );
 
   return (
@@ -154,7 +162,7 @@ export default function InvoicesPage() {
           label="Objekt filter"
           placeholder="Alle Objekte"
           clearable
-          data={(props.list.data ?? []).map((p) => ({ value: String(p.id), label: p.name }))}
+          data={visibleProperties(props.list.data ?? [], hideTest).map((p) => ({ value: String(p.id), label: p.name }))}
           value={propertyFilter}
           onChange={setPropertyFilter}
           w={280}
@@ -190,7 +198,7 @@ export default function InvoicesPage() {
                   <Button size="compact-xs" variant="light" onClick={() => openEdit(inv)}>
                     Ändern
                   </Button>
-                  <Button size="compact-xs" variant="light" color="red" onClick={() => remove.mutate(inv.id)}>
+                  <Button size="compact-xs" variant="light" color="red" onClick={() => setDel(inv)}>
                     Löschen
                   </Button>
                 </Group>
@@ -205,13 +213,15 @@ export default function InvoicesPage() {
           <Group grow>
             <Select
               label="Objekt"
-              data={(props.list.data ?? []).map((p) => ({ value: String(p.id), label: p.name }))}
+              data={visibleProperties(props.list.data ?? [], hideTest).map((p) => ({ value: String(p.id), label: p.name }))}
               value={form.property_id || null}
               onChange={(v) => setForm({ ...form, property_id: v ?? "" })}
             />
             <Select
               label="Kostenart"
-              data={(cats.list.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))}
+              data={(cats.list.data ?? [])
+                .filter((c) => c.property_id === Number(form.property_id))
+                .map((c) => ({ value: String(c.id), label: c.name }))}
               value={form.cost_category_id || null}
               onChange={(v) => setForm({ ...form, cost_category_id: v ?? "" })}
             />
@@ -306,6 +316,17 @@ export default function InvoicesPage() {
           </Group>
         </Stack>
       </Modal>
+
+      <ConfirmDeleteModal
+        opened={!!del}
+        message={`Rechnung (${del?.period_start} – ${del?.period_end}) wird dauerhaft gelöscht.`}
+        confirmText={del?.supplier || "LÖSCHEN"}
+        onClose={() => setDel(null)}
+        onConfirm={() => {
+          if (del) remove.mutate(del.id);
+          setDel(null);
+        }}
+      />
     </Stack>
   );
 }

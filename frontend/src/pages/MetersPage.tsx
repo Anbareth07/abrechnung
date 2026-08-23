@@ -13,7 +13,10 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { api, fmt } from "../api/client";
+import { ConfirmDeleteModal } from "../components/ConfirmDeleteModal";
+import { useTestData } from "../context/TestDataContext";
 import { useCrud } from "../hooks/useCrud";
+import { testPropertyIds, visibleProperties, visibleUnits } from "../utils/testData";
 import type { LeaseUnit, Meter, MeterReading, Property } from "../api/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -41,10 +44,12 @@ export default function MetersPage() {
   const { list, create, update, remove } = useCrud<Meter>("/meters", "meters");
   const props = useCrud<Property>("/properties", "properties");
   const units = useCrud<LeaseUnit>("/lease-units", "lease-units");
+  const { hideTest } = useTestData();
   const [propertyFilter, setPropertyFilter] = useState<string | null>(null);
 
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<Meter | null>(null);
+  const [del, setDel] = useState<Meter | null>(null);
   const [form, setForm] = useState({
     property_id: "",
     lease_unit_id: "",
@@ -88,8 +93,21 @@ export default function MetersPage() {
   const propName = (id: number | null) => (id != null ? props.list.data?.find((p) => p.id === id)?.name ?? "" : "—");
   const unitName = (id: number | null) => (id != null ? units.list.data?.find((u) => u.id === id)?.designation ?? "" : "—");
 
+  const testIds = testPropertyIds(props.list.data ?? []);
+  const isTestMeter = (m: Meter) => {
+    if (m.property_id != null && testIds.has(m.property_id)) return true;
+    if (m.lease_unit_id != null) {
+      const unitProp = units.list.data?.find((u) => u.id === m.lease_unit_id)?.property_id;
+      if (unitProp != null && testIds.has(unitProp)) return true;
+    }
+    return false;
+  };
   const filtered = (list.data ?? []).filter(
-    (m) => !propertyFilter || m.property_id === Number(propertyFilter) || (propertyFilter && m.lease_unit_id && units.list.data?.find((u) => u.id === m.lease_unit_id)?.property_id === Number(propertyFilter)),
+    (m) =>
+      !(hideTest && isTestMeter(m)) &&
+      (!propertyFilter ||
+        m.property_id === Number(propertyFilter) ||
+        (propertyFilter && m.lease_unit_id && units.list.data?.find((u) => u.id === m.lease_unit_id)?.property_id === Number(propertyFilter))),
   );
 
   return (
@@ -100,7 +118,7 @@ export default function MetersPage() {
           label="Objekt filter"
           placeholder="Alle"
           clearable
-          data={(props.list.data ?? []).map((p) => ({ value: String(p.id), label: p.name }))}
+          data={visibleProperties(props.list.data ?? [], hideTest).map((p) => ({ value: String(p.id), label: p.name }))}
           value={propertyFilter}
           onChange={setPropertyFilter}
           w={280}
@@ -136,7 +154,7 @@ export default function MetersPage() {
                   <Button size="compact-xs" variant="light" onClick={() => openEdit(m)}>
                     Ändern
                   </Button>
-                  <Button size="compact-xs" variant="light" color="red" onClick={() => remove.mutate(m.id)}>
+                  <Button size="compact-xs" variant="light" color="red" onClick={() => setDel(m)}>
                     Löschen
                   </Button>
                 </Group>
@@ -147,6 +165,17 @@ export default function MetersPage() {
       </Table>
 
       <ReadingsSection meters={filtered} />
+
+      <ConfirmDeleteModal
+        opened={!!del}
+        message={`Zähler „${del?.name}“ samt aller Zählerstände wird dauerhaft gelöscht.`}
+        confirmText={del?.name ?? ""}
+        onClose={() => setDel(null)}
+        onConfirm={() => {
+          if (del) remove.mutate(del.id);
+          setDel(null);
+        }}
+      />
 
       <Modal opened={open} onClose={() => setOpen(false)} title={edit ? "Zähler ändern" : "Neuer Zähler"}>
         <Stack>
@@ -171,7 +200,7 @@ export default function MetersPage() {
             label="Objekt (für gemeinsame Zähler)"
             placeholder="—"
             clearable
-            data={(props.list.data ?? []).map((p) => ({ value: String(p.id), label: p.name }))}
+            data={visibleProperties(props.list.data ?? [], hideTest).map((p) => ({ value: String(p.id), label: p.name }))}
             value={form.property_id || null}
             onChange={(v) => setForm({ ...form, property_id: v ?? "" })}
           />
@@ -179,7 +208,7 @@ export default function MetersPage() {
             label="Mieteinheit (für Wohnungs-/WM-Zähler)"
             placeholder="—"
             clearable
-            data={(units.list.data ?? []).map((u) => ({ value: String(u.id), label: u.designation }))}
+            data={visibleUnits(units.list.data ?? [], testIds).map((u) => ({ value: String(u.id), label: u.designation }))}
             value={form.lease_unit_id || null}
             onChange={(v) => setForm({ ...form, lease_unit_id: v ?? "" })}
           />
@@ -195,6 +224,7 @@ function ReadingsSection({ meters }: { meters: Meter[] }) {
   const [meterId, setMeterId] = useState<string | null>(null);
   const [date, setDate] = useState("");
   const [value, setValue] = useState("");
+  const [delReading, setDelReading] = useState<MeterReading | null>(null);
 
   const readings = useQuery({
     queryKey: ["meter-readings", meterId],
@@ -267,7 +297,7 @@ function ReadingsSection({ meters }: { meters: Meter[] }) {
                 <Table.Td>{r.reading_date}</Table.Td>
                 <Table.Td>{fmt(r.value, 4)}</Table.Td>
                 <Table.Td>
-                  <Button size="compact-xs" variant="light" color="red" onClick={() => deleteReading.mutate(r.id)}>
+                  <Button size="compact-xs" variant="light" color="red" onClick={() => setDelReading(r)}>
                     Löschen
                   </Button>
                 </Table.Td>
@@ -276,6 +306,18 @@ function ReadingsSection({ meters }: { meters: Meter[] }) {
           </Table.Tbody>
         </Table>
       )}
+
+      <ConfirmDeleteModal
+        opened={!!delReading}
+        title="Zählerstand löschen?"
+        message={`Zählerstand vom ${delReading?.reading_date} wird dauerhaft gelöscht.`}
+        confirmText="LÖSCHEN"
+        onClose={() => setDelReading(null)}
+        onConfirm={() => {
+          if (delReading) deleteReading.mutate(delReading.id);
+          setDelReading(null);
+        }}
+      />
     </Stack>
   );
 }

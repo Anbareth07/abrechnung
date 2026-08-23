@@ -42,11 +42,11 @@ def _seed_objekt1(client):
 
     trink = client.post(
         "/cost-categories",
-        json={"code": "trinkwasser", "name": "Trinkwasser", "default_allocation_key": "CONSUMPTION"},
+        json={"property_id": pid, "code": "trinkwasser", "name": "Trinkwasser", "default_allocation_key": "CONSUMPTION"},
     ).json()
     schmutz = client.post(
         "/cost-categories",
-        json={"code": "schmutzwasser", "name": "Schmutzwasser", "default_allocation_key": "CONSUMPTION"},
+        json={"property_id": pid, "code": "schmutzwasser", "name": "Schmutzwasser", "default_allocation_key": "CONSUMPTION"},
     ).json()
 
     client.post(
@@ -126,6 +126,159 @@ def test_full_flow(client):
     final = client.post(f"/settlements/{pid}/2026/finalize").json()
     assert final["status"] == "FINAL"
     assert final["tenant_count"] == 1
+
+
+def test_tenant_contact_and_monthly_costs(client):
+    p = client.post("/properties", json={"name": "Objekt 1"}).json()
+    u = client.post(
+        "/lease-units",
+        json={"property_id": p["id"], "designation": "W1", "living_area": "50.0"},
+    ).json()
+
+    created = client.post(
+        "/tenants",
+        json={
+            "lease_unit_id": u["id"],
+            "name": "Mieter A",
+            "move_in": "2020-01-01",
+            "monthly_advance": "150.00",
+            "phone": "0170 123456",
+            "email": "a@example.de",
+            "advances": [
+                {"valid_from": "2020-01-01", "amount": "150.00"},
+                {"valid_from": "2025-07-01", "amount": "180.00"},
+            ],
+            "monthly_costs": [
+                {"name": "Heizkosten", "amount": "90.50"},
+                {"name": "Kaltmiete", "amount": "620.00"},
+            ],
+        },
+    ).json()
+    assert created["phone"] == "0170 123456"
+    assert created["email"] == "a@example.de"
+    assert len(created["monthly_costs"]) == 2
+    assert {c["name"] for c in created["monthly_costs"]} == {"Kaltmiete", "Heizkosten"}
+    # Vorauszahlungs-Zeiträume werden zurückgegeben, aktuelle = letzter Zeitraum
+    assert len(created["advances"]) == 2
+    assert created["monthly_advance"] == "180.00"
+
+    # GET liefert Kontaktdaten, Zeiträume und Monatskosten zurück
+    fetched = client.get(f"/tenants/{created['id']}").json()
+    assert fetched["phone"] == "0170 123456"
+    assert fetched["email"] == "a@example.de"
+    assert len(fetched["monthly_costs"]) == 2
+    assert len(fetched["advances"]) == 2
+    assert {a["valid_from"] for a in fetched["advances"]} == {"2020-01-01", "2025-07-01"}
+
+    # Update ersetzt Kontaktdaten, Zeiträume und Monatskosten
+    patched = client.patch(
+        f"/tenants/{created['id']}",
+        json={
+            "phone": "0170 999999",
+            "email": "neu@example.de",
+            "advances": [
+                {"valid_from": "2020-01-01", "amount": "150.00"},
+                {"valid_from": "2025-07-01", "amount": "180.00"},
+                {"valid_from": "2026-01-01", "amount": "200.00"},
+            ],
+            "monthly_costs": [{"name": "Kaltmiete", "amount": "640.00"}],
+        },
+    ).json()
+    assert patched["phone"] == "0170 999999"
+    assert patched["email"] == "neu@example.de"
+    assert [c["name"] for c in patched["monthly_costs"]] == ["Kaltmiete"]
+    assert float(patched["monthly_costs"][0]["amount"]) == 640.0
+    assert len(patched["advances"]) == 3
+    assert patched["monthly_advance"] == "200.00"
+
+    # Auch nach erneutem GET bleiben die Zeiträume erhalten
+    refetched = client.get(f"/tenants/{created['id']}").json()
+    assert len(refetched["advances"]) == 3
+    assert refetched["monthly_advance"] == "200.00"
+
+    # Monatskosten fließen NICHT in die Abrechnung ein
+    result = client.get(f"/settlements/{p['id']}/2026").json()
+    line = result["tenant_lines"][0]
+    assert line["name"] == "Mieter A"
+    assert float(line["total_costs"]) == 0.0  # keine umlagefähigen Kosten vorhanden
+    assert "monthly_costs" not in line
+    assert float(line["saldo"]) == float(-line["advance_total"])
+
+
+def test_category_auto_code(client):
+    p = client.post("/properties", json={"name": "Objekt 1"}).json()
+    pid = p["id"]
+
+    # Ohne Code → Code wird aus dem Namen erzeugt (Slug), objektgebunden
+    c1 = client.post(
+        "/cost-categories",
+        json={"property_id": pid, "name": "Trinkwasser", "default_allocation_key": "CONSUMPTION"},
+    ).json()
+    assert c1["code"] == "trinkwasser"
+    assert c1["name"] == "Trinkwasser"
+    assert c1["property_id"] == pid
+
+    # Umlaute/Leerzeichen werden normalisiert
+    c2 = client.post(
+        "/cost-categories",
+        json={"property_id": pid, "name": "Gebäudebrand-/Elementarversicherung"},
+    ).json()
+    assert c2["code"] == "gebaudebrand_elementarversicherung"
+
+    # Gleicher Name am selben Objekt → find-or-create (keine zweite Kostenart)
+    c3 = client.post("/cost-categories", json={"property_id": pid, "name": "Trinkwasser"}).json()
+    assert c3["id"] == c1["id"]
+
+    # Expliziter Code wird weiterhin akzeptiert
+    c5 = client.post(
+        "/cost-categories", json={"property_id": pid, "name": "Heizung", "code": "heizung"}
+    ).json()
+    assert c5["code"] == "heizung"
+
+    # Gleicher Name an anderem Objekt → eigene Kostenart, Code global erweitert
+    p2 = client.post("/properties", json={"name": "Objekt 2"}).json()
+    c6 = client.post(
+        "/cost-categories", json={"property_id": p2["id"], "name": "Trinkwasser"}
+    ).json()
+    assert c6["id"] != c1["id"]
+    assert c6["property_id"] == p2["id"]
+    assert c6["code"] == "trinkwasser_2"
+
+    # Filter nach Objekt
+    only_p1 = client.get("/cost-categories", params={"property_id": pid}).json()
+    assert all(cat["property_id"] == pid for cat in only_p1)
+
+
+def test_allocation_config_auto_creates_category(client):
+    p = client.post("/properties", json={"name": "Objekt 1"}).json()
+    pid = p["id"]
+
+    # Kostenart entsteht automatisch beim Hinzufügen in den Umlageschlüsseln
+    cfg = client.post(
+        "/allocation-configs",
+        json={
+            "property_id": pid,
+            "cost_category_name": "Gartenpflege",
+            "allocation_key": "WF",
+            "sort_order": 1,
+        },
+    ).json()
+    assert cfg["category_name"] == "Gartenpflege"
+    assert cfg["category_code"]  # Auto-Code vorhanden
+
+    # Erneutes Hinzufügen mit gleichem Namen → Config-Konflikt, aber nur EINE Kostenart
+    dup = client.post(
+        "/allocation-configs",
+        json={
+            "property_id": pid,
+            "cost_category_name": "Gartenpflege",
+            "allocation_key": "WF",
+            "sort_order": 2,
+        },
+    )
+    assert dup.status_code == 409
+    cats = client.get("/cost-categories", params={"property_id": pid}).json()
+    assert len(cats) == 1
 
 
 def test_crud_and_filters(client):

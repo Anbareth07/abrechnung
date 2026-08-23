@@ -169,6 +169,8 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
             garden_water_cost = water.garden_consumption * cbm_price
 
     tenant_lines: list[TenantLine] = []
+    occupied_unit_ids = {t.lease_unit_id for t, _ in active}
+    unit_count = len(occupied_unit_ids)
     for t, tenant_days in active:
         unit = t.lease_unit
         occ_start = max(t.move_in, ys)
@@ -182,11 +184,20 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
                 area, area_total = unit.living_area, total_wf
             elif cl.allocation_key == "NF":
                 area, area_total = unit.utility_area, total_nf
+            elif cl.allocation_key == "WOHNUNG":
+                # Kosten gehen 1:1 gleichmäßig auf jede belegte Wohnung
+                area, area_total = None, unit_count
             else:
                 continue  # CONSUMPTION/NONE
 
             if area_total > 0:
-                breakdown[cl.code] = money(cl.year_cost * (area / area_total) * time_factor)
+                if area is None:
+                    # je Wohnung: gleicher Anteil, zeitanteilig (Miet-Tage/Jahrestage)
+                    breakdown[cl.code] = money(
+                        (cl.year_cost / Decimal(area_total)) * time_factor
+                    )
+                else:
+                    breakdown[cl.code] = money(cl.year_cost * (area / area_total) * time_factor)
             else:
                 breakdown[cl.code] = ZERO
                 warnings.append(f"Gesamtfläche 0 für {cl.name} – Anteil 0 gesetzt.")

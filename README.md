@@ -47,6 +47,38 @@ uvicorn app.main:app --reload
 
 API-Doku: http://localhost:8000/docs
 
+## Zwei getrennte Datenbanken
+
+Das Backend liest die Datenbank über die Umgebungsvariable `DATABASE_URL`
+(Startzeit). Es gibt zwei lokale SQLite-Datenbanken im Ordner `backend/`:
+
+| Datei | Zweck | Bearbeitung |
+|-------|-------|-------------|
+| `real.db` | **Echte Nutzerdaten** (Objekte, Mieter, Rechnungen, Zähler) | ❌ Wird **nicht** von Entwicklung/Tests geändert |
+| `dev.db`  | **Test-/Seed-Daten** für Feature-Entwicklung | ✅ Frei veränderbar, wird vom Assistenten für Tests genutzt |
+
+> Beide `.db`-Dateien sind in `.gitignore` ausgenommen (vertrauliche Daten).
+
+### Starten
+
+```powershell
+# Echte Daten (real.db) – zum Pflegen der echten Daten
+.\backend\run-real.ps1
+
+# Testdaten (dev.db) – für Entwicklung/Tests
+.\backend\run-dev.ps1
+```
+
+Manuell äquivalent:
+
+```powershell
+$env:DATABASE_URL = "sqlite:///c:/Users/tfran/Projects/Abrechnung/backend/real.db"  # oder dev.db
+python -m uvicorn app.main:app --app-dir .\backend --port 8000
+```
+
+Die echte Datenbank `real.db` enthält nur das Schema (Migrationen bis `head`),
+noch keine Daten – diese trägst du über die UI ein.
+
 ## Tests
 
 ```powershell
