@@ -42,11 +42,15 @@ def _unit(session, prop, designation, wf, extra):
 
 
 def _tenant(session, unit, name, move_in, monthly):
-    session.add(
-        models.Tenant(
-            lease_unit_id=unit.id, name=name, move_in=move_in, move_out=None, monthly_advance=Decimal(monthly)
-        )
+    tenant = models.Tenant(
+        lease_unit_id=unit.id, name=name, move_in=move_in, move_out=None, monthly_advance=Decimal(monthly)
     )
+    session.add(tenant)
+    session.flush()
+    session.add(
+        models.AdvancePayment(tenant_id=tenant.id, valid_from=move_in, amount=Decimal(monthly))
+    )
+    return tenant
 
 
 def _meter(session, name, mtype, prop=None, unit=None):

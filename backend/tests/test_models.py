@@ -22,6 +22,10 @@ def test_all_tables_create_and_snapshot_works(session):
     session.add(tenant)
     session.flush()
 
+    session.add(
+        models.AdvancePayment(tenant_id=tenant.id, valid_from=date(2020, 1, 1), amount=Decimal("150"))
+    )
+
     settlement = models.Settlement(property_id=prop.id, year=2026)
     session.add(settlement)
     session.flush()
@@ -50,3 +54,6 @@ def test_all_tables_create_and_snapshot_works(session):
     assert session.get(models.Settlement, settlement.id).year == 2026
     assert session.get(models.SettlementLine, line.id).saldo == Decimal("-1000.00")
     assert session.get(models.TechemRecord, techem.id).quantity_kwh == Decimal("12000")
+    tenant_advances = session.get(models.Tenant, tenant.id).advance_payments
+    assert len(tenant_advances) == 1
+    assert tenant_advances[0].amount == Decimal("150")

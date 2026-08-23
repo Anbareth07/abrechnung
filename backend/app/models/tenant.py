@@ -56,3 +56,28 @@ class Tenant(Base):
     settlement_lines: Mapped[List["SettlementLine"]] = relationship(
         back_populates="tenant", cascade="all, delete-orphan"
     )
+    advance_payments: Mapped[List["AdvancePayment"]] = relationship(
+        back_populates="tenant",
+        cascade="all, delete-orphan",
+        order_by="AdvancePayment.valid_from",
+    )
+
+
+class AdvancePayment(Base):
+    """Vorauszahlung eines Mieters, gültig ab einem Datum.
+
+    Es gilt der letzte Eintrag mit `valid_from` vor dem jeweiligen Zeitpunkt.
+    Bei einer Erhöhung/Änderung wird ein neuer Eintrag angelegt – der vorherige
+    Betrag bleibt als Historie für die zeitanteilige Abrechnung erhalten.
+    """
+
+    __tablename__ = "advance_payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+
+    tenant: Mapped["Tenant"] = relationship(back_populates="advance_payments")

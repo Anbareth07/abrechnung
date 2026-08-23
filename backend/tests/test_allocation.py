@@ -85,3 +85,24 @@ def test_move_out_handling(session):
     names = [ln.name for ln in result.tenant_lines]
     assert "Halbjahr" not in names
     assert "Volljahr" in names
+
+
+def test_advance_periods_pro_rata(session):
+    """Vorauszahlung mit Zeiträumen: ab 01.07.2026 gelten 180 € statt 100 €."""
+    from app import models
+
+    prop = _build_two_units(session)
+    voll = session.query(models.Tenant).filter_by(name="Volljahr").one()
+    session.add(models.AdvancePayment(tenant_id=voll.id, valid_from=date(2020, 1, 1), amount=Decimal("100")))
+    session.add(models.AdvancePayment(tenant_id=voll.id, valid_from=date(2026, 7, 1), amount=Decimal("180")))
+    session.commit()
+
+    result = engine_mod.compute_settlement(session, prop.id, 2026)
+    line = next(ln for ln in result.tenant_lines if ln.name == "Volljahr")
+
+    # 2026: 01.01–30.06 = 181 Tage à 100 €, 01.07–31.12 = 184 Tage à 180 €
+    expected = (Decimal(181) * Decimal("100") + Decimal(184) * Decimal("180")) * Decimal(12) / Decimal(365)
+    assert line.advance_total == engine_mod.money(expected)
+
+    # Saldo berücksichtigt die neue Vorauszahlung
+    assert line.saldo == engine_mod.money(line.total_costs - line.advance_total)

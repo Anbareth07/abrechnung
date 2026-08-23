@@ -18,6 +18,12 @@ export interface LeaseUnit {
   utility_area?: Money;
 }
 
+export interface TenantAdvance {
+  id?: number;
+  valid_from: string;
+  amount: Money;
+}
+
 export interface Tenant {
   id: number;
   lease_unit_id: number;
@@ -25,6 +31,7 @@ export interface Tenant {
   move_in: string;
   move_out: string | null;
   monthly_advance: Money;
+  advances?: TenantAdvance[];
 }
 
 export interface CostCategory {

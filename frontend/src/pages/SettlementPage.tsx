@@ -26,12 +26,15 @@ const KEY_LABEL: Record<string, string> = {
   NONE: "—",
 };
 
-const YEARS = Array.from({ length: 11 }, (_, i) => String(2020 + i));
+// Abrechnungsjahre dynamisch: von 2025 (Start) bis aktuelles Jahr + 3,
+// damit Folgejahre (z. B. 2027, 2031) ohne Codeänderung verfügbar sind.
+const CURRENT_YEAR = new Date().getFullYear();
+const YEARS = Array.from({ length: CURRENT_YEAR + 3 - 2025 + 1 }, (_, i) => String(2025 + i));
 
 export default function SettlementPage() {
   const props = useCrud<Property>("/properties", "properties");
   const [propertyId, setPropertyId] = useState<string | null>(null);
-  const [year, setYear] = useState<string>("2026");
+  const [year, setYear] = useState<string>(String(CURRENT_YEAR));
 
   const result = useQuery({
     queryKey: ["settlement", propertyId, year],
@@ -74,7 +77,7 @@ export default function SettlementPage() {
           onChange={setPropertyId}
           w={280}
         />
-        <Select label="Jahr" data={YEARS} value={year} onChange={(v) => setYear(v ?? "2026")} w={120} />
+        <Select label="Jahr" data={YEARS} value={year} onChange={(v) => setYear(v ?? String(CURRENT_YEAR))} w={120} />
       </Group>
 
       {completeness.data && completeness.data.length > 0 && (

@@ -10,12 +10,13 @@ import {
   Stack,
   Table,
   Tabs,
+  Text,
   TextInput,
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, fmt } from "../api/client";
+import { api, fmt, num } from "../api/client";
 import { useCrud } from "../hooks/useCrud";
 import type {
   AllocationConfig,
@@ -206,46 +207,75 @@ function UnitsTab() {
     if (edit) update.mutate({ id: edit.id, data: payload }, { onSuccess: done, onError: err });
     else create.mutate(payload, { onSuccess: done, onError: err });
   };
-  const propName = (id: number) => props.list.data?.find((p) => p.id === id)?.name ?? "";
+  const units = (list.data ?? []).slice();
+  const grouped = (props.list.data ?? [])
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, "de"))
+    .map((p) => {
+      const gUnits = units
+        .filter((u) => u.property_id === p.id)
+        .sort((a, b) => a.designation.localeCompare(b.designation, "de"));
+      return {
+        property: p,
+        units: gUnits,
+        wf: gUnits.reduce((s, u) => s + num(u.living_area), 0),
+        nf: gUnits.reduce((s, u) => s + num(u.utility_area), 0),
+      };
+    })
+    .filter((g) => g.units.length > 0);
 
   return (
     <>
       <Group mb="sm">
         <Button onClick={openCreate}>Neue Mieteinheit</Button>
       </Group>
-      <Table striped highlightOnHover>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Objekt</Table.Th>
-            <Table.Th>Bezeichnung</Table.Th>
-            <Table.Th>WF (m²)</Table.Th>
-            <Table.Th>Extra (m²)</Table.Th>
-            <Table.Th>NF (m²)</Table.Th>
-            <Table.Th></Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {(list.data ?? []).map((u) => (
-            <Table.Tr key={u.id}>
-              <Table.Td>{propName(u.property_id)}</Table.Td>
-              <Table.Td>{u.designation}</Table.Td>
-              <Table.Td>{fmt(u.living_area, 2)}</Table.Td>
-              <Table.Td>{fmt(u.extra_area, 2)}</Table.Td>
-              <Table.Td>{fmt(u.utility_area, 2)}</Table.Td>
-              <Table.Td>
-                <Group gap="xs" justify="flex-end">
-                  <Button size="compact-xs" variant="light" onClick={() => openEdit(u)}>
-                    Ändern
-                  </Button>
-                  <Button size="compact-xs" variant="light" color="red" onClick={() => remove.mutate(u.id)}>
-                    Löschen
-                  </Button>
-                </Group>
-              </Table.Td>
-            </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </Table>
+
+      {grouped.length === 0 && <Text c="dimmed">Keine Mieteinheiten vorhanden.</Text>}
+
+      {grouped.map(({ property, units: gUnits, wf, nf }) => (
+        <Stack key={property.id} mb="lg">
+          <Group>
+            <Title order={5}>{property.name}</Title>
+            <Badge variant="light" size="sm">
+              {gUnits.length} {gUnits.length === 1 ? "Einheit" : "Einheiten"}
+            </Badge>
+            <Text size="sm" c="dimmed">
+              WF {fmt(wf, 2)} · NF {fmt(nf, 2)} m²
+            </Text>
+          </Group>
+          <Table striped highlightOnHover>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Bezeichnung</Table.Th>
+                <Table.Th>WF (m²)</Table.Th>
+                <Table.Th>Extra (m²)</Table.Th>
+                <Table.Th>NF (m²)</Table.Th>
+                <Table.Th></Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {gUnits.map((u) => (
+                <Table.Tr key={u.id}>
+                  <Table.Td>{u.designation}</Table.Td>
+                  <Table.Td>{fmt(u.living_area, 2)}</Table.Td>
+                  <Table.Td>{fmt(u.extra_area, 2)}</Table.Td>
+                  <Table.Td>{fmt(u.utility_area, 2)}</Table.Td>
+                  <Table.Td>
+                    <Group gap="xs" justify="flex-end">
+                      <Button size="compact-xs" variant="light" onClick={() => openEdit(u)}>
+                        Ändern
+                      </Button>
+                      <Button size="compact-xs" variant="light" color="red" onClick={() => remove.mutate(u.id)}>
+                        Löschen
+                      </Button>
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Stack>
+      ))}
 
       <Modal opened={open} onClose={() => setOpen(false)} title={edit ? "Mieteinheit ändern" : "Neue Mieteinheit"}>
         <Stack>
@@ -285,6 +315,7 @@ function UnitsTab() {
 function TenantsTab() {
   const { list, create, update, remove } = useCrud<Tenant>("/tenants", "tenants");
   const units = useCrud<LeaseUnit>("/lease-units", "lease-units");
+  const props = useCrud<Property>("/properties", "properties");
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<Tenant | null>(null);
   const [form, setForm] = useState({
@@ -293,31 +324,50 @@ function TenantsTab() {
     move_in: "",
     move_out: "",
     monthly_advance: "",
+    advances: [{ valid_from: "", amount: "" }],
   });
 
   const openCreate = () => {
     setEdit(null);
-    setForm({ lease_unit_id: "", name: "", move_in: "", move_out: "", monthly_advance: "" });
+    setForm({ lease_unit_id: "", name: "", move_in: "", move_out: "", monthly_advance: "", advances: [{ valid_from: "", amount: "" }] });
     setOpen(true);
   };
   const openEdit = (t: Tenant) => {
     setEdit(t);
+    const advances =
+      t.advances && t.advances.length
+        ? t.advances.map((a) => ({ valid_from: a.valid_from, amount: String(a.amount) }))
+        : [{ valid_from: t.move_in, amount: String(t.monthly_advance) }];
     setForm({
       lease_unit_id: String(t.lease_unit_id),
       name: t.name,
       move_in: t.move_in,
       move_out: t.move_out ?? "",
       monthly_advance: String(t.monthly_advance),
+      advances,
     });
     setOpen(true);
   };
+  const setAdvance = (idx: number, patch: Partial<{ valid_from: string; amount: string }>) =>
+    setForm((f) => ({ ...f, advances: f.advances.map((a, i) => (i === idx ? { ...a, ...patch } : a)) }));
+  const addAdvance = () => setForm((f) => ({ ...f, advances: [...f.advances, { valid_from: "", amount: "" }] }));
+  const removeAdvance = (idx: number) =>
+    setForm((f) => ({ ...f, advances: f.advances.filter((_, i) => i !== idx) }));
+
   const save = () => {
+    const validAdvances = form.advances
+      .filter((a) => a.valid_from)
+      .map((a) => ({ valid_from: a.valid_from, amount: a.amount || "0" }))
+      .sort((a, b) => a.valid_from.localeCompare(b.valid_from));
     const payload = {
       lease_unit_id: Number(form.lease_unit_id),
       name: form.name,
       move_in: form.move_in,
       move_out: form.move_out || null,
       monthly_advance: form.monthly_advance || "0",
+      advances: validAdvances.length
+        ? validAdvances
+        : [{ valid_from: form.move_in, amount: form.monthly_advance || "0" }],
     };
     const done = () => {
       setOpen(false);
@@ -328,7 +378,9 @@ function TenantsTab() {
   };
   const unitLabel = (id: number) => {
     const u = units.list.data?.find((x) => x.id === id);
-    return u ? u.designation : "";
+    if (!u) return "";
+    const p = props.list.data?.find((pp) => pp.id === u.property_id);
+    return p ? `${p.name} · ${u.designation}` : u.designation;
   };
 
   return (
@@ -354,7 +406,14 @@ function TenantsTab() {
               <Table.Td>{unitLabel(t.lease_unit_id)}</Table.Td>
               <Table.Td>{t.move_in}</Table.Td>
               <Table.Td>{t.move_out ?? "—"}</Table.Td>
-              <Table.Td>{fmt(t.monthly_advance, 2)}</Table.Td>
+              <Table.Td>
+                {fmt(t.monthly_advance, 2)}
+                {t.advances && t.advances.length > 1 && (
+                  <Badge variant="light" size="sm" ml={4}>
+                    {t.advances.length} Zeiträume
+                  </Badge>
+                )}
+              </Table.Td>
               <Table.Td>
                 <Group gap="xs" justify="flex-end">
                   <Button size="compact-xs" variant="light" onClick={() => openEdit(t)}>
@@ -374,7 +433,10 @@ function TenantsTab() {
         <Stack>
           <Select
             label="Mieteinheit"
-            data={(units.list.data ?? []).map((u) => ({ value: String(u.id), label: u.designation }))}
+            data={(units.list.data ?? []).map((u) => {
+              const p = props.list.data?.find((pp) => pp.id === u.property_id);
+              return { value: String(u.id), label: p ? `${p.name} · ${u.designation}` : u.designation };
+            })}
             value={form.lease_unit_id || null}
             onChange={(v) => setForm({ ...form, lease_unit_id: v ?? "" })}
           />
@@ -397,12 +459,33 @@ function TenantsTab() {
               onChange={(e) => setForm({ ...form, move_out: e.currentTarget.value })}
             />
           </Group>
-          <NumberInput
-            label="Vorauszahlung (€/Monat)"
-            value={form.monthly_advance}
-            onChange={(v) => setForm({ ...form, monthly_advance: String(v ?? "") })}
-            decimalScale={2}
-          />
+
+          <Title order={6}>Vorauszahlung (Zeiträume)</Title>
+          {form.advances.map((a, idx) => (
+            <Group key={idx} grow>
+              <TextInput
+                type="date"
+                label="Gültig ab"
+                value={a.valid_from}
+                onChange={(e) => setAdvance(idx, { valid_from: e.currentTarget.value })}
+              />
+              <NumberInput
+                label="Betrag €/Monat"
+                value={a.amount}
+                onChange={(v) => setAdvance(idx, { amount: String(v ?? "") })}
+                decimalScale={2}
+              />
+              {form.advances.length > 1 && (
+                <Button variant="light" color="red" mt="xl" onClick={() => removeAdvance(idx)}>
+                  ✕
+                </Button>
+              )}
+            </Group>
+          ))}
+          <Button variant="light" onClick={addAdvance}>
+            + Zeitraum hinzufügen
+          </Button>
+
           <Button onClick={save}>Speichern</Button>
         </Stack>
       </Modal>

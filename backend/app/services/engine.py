@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Optional
 
@@ -64,6 +64,34 @@ class SettlementResult:
     garden_water_cost: Decimal = ZERO
     unallocated_water: Decimal = ZERO
     warnings: list[str] = field(default_factory=list)
+
+
+def _advance_total(
+    tenant: models.Tenant, year: int, occ_start: date, occ_end: date
+) -> Decimal:
+    """Monatliche Vorauszahlung zeitanteilig für das Abrechnungsjahr.
+
+    Nutzt die Vorauszahlungs-Zeiträume (gültig ab Datum). Ohne Einträge wird auf
+    die bisherige Einzel-Vorauszahlung (monthly_advance) zurückgegriffen.
+    """
+    payments = sorted(tenant.advance_payments or [], key=lambda p: p.valid_from)
+    diy = days_in_year(year)
+
+    if not payments:
+        occ_days = (occ_end - occ_start).days + 1
+        return tenant.monthly_advance * (Decimal(occ_days) / Decimal(diy)) * Decimal(12)
+
+    total = ZERO
+    for i, p in enumerate(payments):
+        seg_end = (
+            payments[i + 1].valid_from - timedelta(days=1) if i + 1 < len(payments) else None
+        )
+        start = max(p.valid_from, occ_start)
+        end = min(seg_end or occ_end, occ_end)
+        if start <= end:
+            days = (end - start).days + 1
+            total += p.amount * (Decimal(days) / Decimal(diy)) * Decimal(12)
+    return total
 
 
 def compute_settlement(session: Session, property_id: int, year: int) -> SettlementResult:
@@ -143,6 +171,8 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
     tenant_lines: list[TenantLine] = []
     for t, tenant_days in active:
         unit = t.lease_unit
+        occ_start = max(t.move_in, ys)
+        occ_end = min(t.move_out, ye) if t.move_out else ye
         time_factor = Decimal(tenant_days) / Decimal(diy)
         advance_months = time_factor * Decimal(12)
         breakdown: dict[str, Decimal] = {}
@@ -170,8 +200,6 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
                 breakdown["WASSER_GARTEN"] = ZERO
 
             if cbm_price is not None:
-                occ_start = max(t.move_in, ys)
-                occ_end = min(t.move_out, ye) if t.move_out else ye
                 unit_consumption, missing_meters = unit_water_consumption(
                     session, unit.id, occ_start, occ_end
                 )
@@ -188,7 +216,7 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
                 breakdown["WASSER_VERBRAUCH"] = money(unit_consumption * cbm_price)
 
         total_costs = money(sum(breakdown.values(), ZERO))
-        advance_total = money(t.monthly_advance * advance_months)
+        advance_total = money(_advance_total(t, year, occ_start, occ_end))
         saldo = money(total_costs - advance_total)
 
         tenant_lines.append(

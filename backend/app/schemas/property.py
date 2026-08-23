@@ -54,6 +54,19 @@ class LeaseUnitUpdate(BaseModel):
     extra_area: Optional[Decimal] = None
 
 
+class AdvanceRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    valid_from: date
+    amount: Decimal
+
+
+class AdvanceCreate(BaseModel):
+    valid_from: date
+    amount: Decimal
+
+
 class TenantRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -63,6 +76,7 @@ class TenantRead(BaseModel):
     move_in: date
     move_out: Optional[date]
     monthly_advance: Decimal
+    advances: list[AdvanceRead] = []
 
 
 class TenantCreate(BaseModel):
@@ -71,6 +85,7 @@ class TenantCreate(BaseModel):
     move_in: date
     move_out: Optional[date] = None
     monthly_advance: Decimal = Decimal("0")
+    advances: list[AdvanceCreate] = []
 
 
 class TenantUpdate(BaseModel):
@@ -79,3 +94,4 @@ class TenantUpdate(BaseModel):
     move_in: Optional[date] = None
     move_out: Optional[date] = None
     monthly_advance: Optional[Decimal] = None
+    advances: Optional[list[AdvanceCreate]] = None
