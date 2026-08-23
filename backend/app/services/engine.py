@@ -311,8 +311,6 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
             garden_water_cost = water.garden_consumption * cbm_price
 
     tenant_lines: list[TenantLine] = []
-    occupied_unit_ids = {t.lease_unit_id for t, _ in active}
-    unit_count = len(occupied_unit_ids)
     for t, tenant_days in active:
         unit = t.lease_unit
         occ_start = max(t.move_in, ys)
@@ -331,20 +329,13 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
                 area, area_total = unit.utility_area, total_nf
                 basis_label, basis_total = "Nutzfläche", total_nf
                 basis_share = unit.utility_area
-            elif cl.allocation_key == "WOHNUNG":
-                # Kosten gehen 1:1 gleichmäßig auf jede belegte Wohnung
-                area, area_total = None, unit_count
-                basis_label, basis_total = "Wohnung", Decimal(unit_count)
-                basis_share = Decimal(1)
             else:
-                continue  # CONSUMPTION/NONE
+                # WOHNUNG/CONSUMPTION/NONE: Wohnungskosten laufen wohnungbezogen
+                # (eine Rechnung gilt exakt für eine Wohnung) – kein objektweiter Split.
+                continue
 
             if area_total > 0:
-                if area is None:
-                    # je Wohnung: gleicher Anteil, zeitanteilig (Miet-Tage/Jahrestage)
-                    amount = (cl.year_cost / Decimal(area_total)) * time_factor
-                else:
-                    amount = cl.year_cost * (area / area_total) * time_factor
+                amount = cl.year_cost * (area / area_total) * time_factor
             else:
                 amount = ZERO
                 warnings.append(f"Gesamtfläche 0 für {cl.name} – Anteil 0 gesetzt.")
@@ -426,11 +417,12 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
                 CategoryShare(
                     code=code,
                     name=category_name_by_id.get(cat_id, code),
-                    allocation_key="WOHNEINHEIT",
+                    allocation_key="WOHNUNG",
                     year_cost=val,
-                    basis_label="Wohneinheit",
-                    basis_total=Decimal(1),
-                    basis_share=Decimal(1),
+                    basis_label="Wohnung",
+                    # Keine Verteil-Basis: eine Rechnung gilt exakt für die Wohnung
+                    basis_total=None,
+                    basis_share=None,
                     days=tenant_days,
                     amount=amount,
                 )

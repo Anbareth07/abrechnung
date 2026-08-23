@@ -250,7 +250,7 @@ function ResultView({
             </Table.Thead>
             <Table.Tbody>
               {t.details.map((d) => (
-                <Table.Tr key={d.code}>
+                <Table.Tr key={`${d.code}-${d.basis_label}`}>
                   <Table.Td>{d.name}</Table.Td>
                   <Table.Td ta="right">{fmt(d.year_cost)} €</Table.Td>
                   <Table.Td>{d.basis_label}</Table.Td>
