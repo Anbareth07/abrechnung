@@ -209,7 +209,7 @@ export default function InvoicesPage() {
     form.cost_category_id !== "" &&
     form.title.trim() !== "" &&
     form.amount !== "" &&
-    Number(form.amount) > 0 &&
+    Number(form.amount) !== 0 &&
     !anteilInvalid &&
     (!isWohnung || form.lease_unit_id !== "");
 
@@ -442,9 +442,11 @@ export default function InvoicesPage() {
               value={form.amount}
               onChange={(v) => setForm({ ...form, amount: String(v ?? "") })}
               decimalScale={2}
-              min={0}
             />
           </Group>
+          <Text size="xs" c="dimmed">
+            Negativer Betrag = Gutschrift/Erstattung (z. B. Strompreisbremse-Rückerstattung).
+          </Text>
           <TextInput
             label="Kommentar (optional)"
             placeholder="z. B. Rechnungsnummer, Erläuterung"

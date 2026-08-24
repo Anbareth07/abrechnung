@@ -149,6 +149,34 @@ describe("InvoicesPage generische Rechnung", () => {
     );
   });
 
+  it("erfasst eine Gutschrift mit negativer Summe", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await openNew(user);
+
+    await user.selectOptions(inDialog().getByLabelText("Objekt"), "3");
+    await user.selectOptions(inDialog().getByLabelText("Kostenstelle"), "10");
+    await user.type(inDialog().getByLabelText("Titel"), "Strompreisbremse 2023");
+    await user.type(inDialog().getByLabelText("Summe (€)"), "-200");
+
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+
+    const year = String(new Date().getFullYear() - 1);
+    expect(crudMocks.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        property_id: 3,
+        cost_category_id: 10,
+        period_start: `${year}-01-01`,
+        period_end: `${year}-12-31`,
+        items: [
+          expect.objectContaining({
+            gross_amount: "-200",
+          }),
+        ],
+      }),
+    );
+  });
+
   it("verlangt bei Kostenstelle 'Wohnung' die Wohnungsauswahl", async () => {
     const user = userEvent.setup();
     renderPage();
