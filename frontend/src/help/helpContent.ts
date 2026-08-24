@@ -130,7 +130,7 @@ export const abrechnungHelp: HelpContent = {
         "Je Mieter die Kostenstellen prüfen; über „?“ auf den Beträgen siehst du die Berechnung (Rechnungen, Tarife inkl. MwSt).",
         "Im eingeklappten Kopf siehst du sofort, ob Nachzahlung (-) oder Guthaben entstanden ist.",
         "Anschließend „Abrechnung finalisieren“ – der Stand wird eingefroren und je Mieter als PDF herunterladbar.",
-        "„Excel“ exportiert die gesamte Jahresabrechnung als Matrix (Kostenarten × Mieter, inkl. Summen, Vorauszahlungen und Saldo) zum Auswerten in Excel.",
+        "„Excel“ exportiert die gesamte Jahresabrechnung als Arbeitsmappe: Matrix (Kostenarten × Mieter, inkl. Summen, Vorauszahlungen und Saldo) plus alle Ausgangsdaten des Jahres (Stammdaten, Rechnungen, Strom, Wasser, Techem, Vorauszahlungen) – zum Nachvollziehen und Auswerten in Excel.",
       ],
     },
     {

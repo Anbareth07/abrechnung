@@ -1,4 +1,9 @@
-"""Excel-Export der Jahresabrechnung (Matrix: Kostenarten × Mieter) mit openpyxl."""
+"""Excel-Export der Jahresabrechnung (komplette Arbeitsmappe) mit openpyxl.
+
+Enthält: Matrix (Kostenarten × Mieter) plus alle Ausgangsdaten des
+Abrechnungsjahres (Stammdaten, Rechnungen, Strom, Wasser, Techem,
+Vorauszahlungen) – als eigenständige, nachvollziehbare Abrechnungsdatei.
+"""
 
 from __future__ import annotations
 
@@ -9,8 +14,13 @@ from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from sqlalchemy import select
 
-from .engine import compute_settlement
+from .. import models
+from ..models.enums import InvoiceKind
+from . import strom as strom_service
+from . import wasser as wasser_service
+from .engine import _anteil_factor, compute_settlement
 from .prorata import year_bounds
 
 _CENTS = Decimal("0.01")
@@ -46,8 +56,423 @@ def _money(value) -> float:
     return float(Decimal(str(value)).quantize(_CENTS))
 
 
+def _num(value):
+    """Wert als float ohne Rundung (z. B. Zählerstände)."""
+    if value is None:
+        return None
+    return float(Decimal(str(value)))
+
+
+def _write_table(ws, start_row, headers, rows, widths=None, money_cols=()):
+    """Schreibt eine Tabelle mit Kopfzeile; gibt die letzte belegte Zeile zurück."""
+    for col, text in enumerate(headers, start=1):
+        cell = ws.cell(start_row, col, text)
+        cell.font = _HEADER_FONT
+        cell.fill = _HEADER_FILL
+        cell.border = _BORDER
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+    for r, row in enumerate(rows, start=start_row + 1):
+        for c, value in enumerate(row, start=1):
+            cell = ws.cell(r, c, value)
+            cell.border = _BORDER
+            if c in money_cols:
+                cell.number_format = "#,##0.00"
+                cell.alignment = _RIGHT
+            elif isinstance(value, (int, float)):
+                cell.alignment = _RIGHT
+    if widths:
+        for i, w in enumerate(widths, start=1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+    return start_row + len(rows)
+
+
+def _add_stammdaten_sheet(wb, session, result, property_id, year, ys, ye):
+    """Objekt, Einheiten und im Jahr aktive Mieter."""
+    prop = session.get(models.Property, property_id)
+    ws = wb.create_sheet("Stammdaten")
+    ws["A1"] = f"Stammdaten {year}"
+    ws["A1"].font = _TITLE_FONT
+    ws["A2"] = "Objekt, Einheiten und Mieter als Grundlage der Berechnung"
+    ws["A2"].font = Font(italic=True, size=9)
+
+    r = 4
+    ws.cell(r, 1, "Objekt").font = _HEADER_FONT
+    r += 1
+    obj_rows = [
+        ("Name", result.property_name),
+        ("Straße", prop.street if prop else ""),
+        ("PLZ", prop.zip_code if prop else ""),
+        ("Ort", prop.city if prop else ""),
+        ("Gesamtwohnfläche (m²)", _money(result.total_wf)),
+        ("Gesamtnutzfläche (m²)", _money(result.total_nf)),
+    ]
+    if prop is not None and prop.wasser_versiegelte_flaeche is not None:
+        obj_rows.append(("Versiegelte Fläche (m²)", _money(prop.wasser_versiegelte_flaeche)))
+    for label, value in obj_rows:
+        ws.cell(r, 1, label).border = _BORDER
+        cell = ws.cell(r, 2, value)
+        cell.border = _BORDER
+        if isinstance(value, (int, float)):
+            cell.number_format = "#,##0.00"
+            cell.alignment = _RIGHT
+        r += 1
+
+    units = session.scalars(
+        select(models.LeaseUnit)
+        .where(models.LeaseUnit.property_id == property_id)
+        .order_by(models.LeaseUnit.designation)
+    ).all()
+
+    r += 1
+    ws.cell(r, 1, "Einheiten").font = _HEADER_FONT
+    r += 1
+    unit_rows = [
+        (u.designation, _money(u.living_area), _money(u.extra_area), _money(u.utility_area))
+        for u in units
+    ]
+    r = _write_table(
+        ws, r, ["Bezeichnung", "Wohnfläche (m²)", "Garagenfläche (m²)", "Nutzfläche (m²)"],
+        unit_rows, widths=[24, 18, 18, 18], money_cols=(2, 3, 4),
+    ) + 1
+
+    ws.cell(r, 1, "Mieter (im Abrechnungsjahr aktiv)").font = _HEADER_FONT
+    r += 1
+    tenant_rows = []
+    for u in units:
+        for t in u.tenants:
+            occ_start = max(t.move_in, ys)
+            occ_end = min(t.move_out, ye) if t.move_out else ye
+            if occ_start > occ_end:
+                continue
+            days = (occ_end - occ_start).days + 1
+            tenant_rows.append(
+                (
+                    t.name,
+                    u.designation,
+                    _fmt_date(t.move_in),
+                    _fmt_date(t.move_out) if t.move_out else "",
+                    _money(t.monthly_advance),
+                    days,
+                )
+            )
+    _write_table(
+        ws, r, ["Name", "Wohnung", "Einzug", "Auszug", "Vorauszahlung (€/Monat)", "Tage im Jahr"],
+        tenant_rows, widths=[24, 20, 12, 12, 22, 12], money_cols=(5,),
+    )
+
+
+def _add_rechnungen_sheet(wb, session, property_id, year, ys, ye):
+    """Alle Rechnungen des Jahres inkl. Anrechnungsanteil und angerechnetem Betrag."""
+    ws = wb.create_sheet("Rechnungen")
+    ws["A1"] = f"Rechnungen {year}"
+    ws["A1"].font = _TITLE_FONT
+    ws["A2"] = "Eingabedaten (reale Beträge) und daraus angerechnete Beträge"
+    ws["A2"].font = Font(italic=True, size=9)
+
+    invoices = session.scalars(
+        select(models.Invoice).where(models.Invoice.property_id == property_id)
+    ).all()
+    rows = []
+    for inv in invoices:
+        overlaps = (inv.valid_from is not None and inv.valid_from <= ye) or (
+            inv.period_start <= ye and inv.period_end >= ys
+        )
+        if not overlaps:
+            continue
+        cat = inv.cost_category
+        if (
+            inv.kind == InvoiceKind.GRUNDSTEUER
+            and inv.valid_from is not None
+            and inv.annual_amount is not None
+        ):
+            real = inv.annual_amount
+            period = f"{_fmt_date(inv.valid_from)} – (Bescheid)"
+        else:
+            real = sum((it.gross_amount for it in inv.items), Decimal("0"))
+            period = f"{_fmt_date(inv.period_start)} – {_fmt_date(inv.period_end)}"
+        faktor = _anteil_factor(inv)
+        anteil_label = ""
+        if inv.anteil_zaehler is not None and inv.anteil_nenner is not None:
+            anteil_label = f"{int(Decimal(str(inv.anteil_zaehler)))}/{int(Decimal(str(inv.anteil_nenner)))}"
+        comment = ""
+        if inv.meta and "kommentar" in inv.meta:
+            comment = str(inv.meta["kommentar"])
+        rows.append(
+            (
+                cat.name if cat else "",
+                inv.kind or "",
+                period,
+                inv.description or "",
+                inv.invoice_number or "",
+                inv.supplier or "",
+                _money(real),
+                anteil_label,
+                _money(real * faktor),
+                comment,
+            )
+        )
+    rows.sort(key=lambda x: (x[0] or "", x[3] or ""))
+    _write_table(
+        ws, 4,
+        ["Kostenstelle", "Art", "Zeitraum", "Titel", "Rechnungsnr.", "Lieferant",
+         "Betrag (€)", "Anteil", "angerechnet (€)", "Kommentar"],
+        rows,
+        widths=[22, 18, 26, 28, 14, 20, 14, 12, 16, 26],
+        money_cols=(7, 9),
+    )
+
+
+def _add_strom_sheet(wb, session, property_id, year, ys, ye):
+    """Tarife, Zählerstände und Berechnung des Strom-Moduls."""
+    ws = wb.create_sheet("Strom")
+    ws["A1"] = f"Strom {year}"
+    ws["A1"].font = _TITLE_FONT
+    start_bound = date(year - 1, 12, 31)
+
+    r = 3
+    ws.cell(r, 1, "Tarife").font = _HEADER_FONT
+    r += 1
+    prices = session.scalars(
+        select(models.StromPrice)
+        .where(models.StromPrice.property_id == property_id)
+        .order_by(models.StromPrice.kind, models.StromPrice.valid_from)
+    ).all()
+    price_rows = [
+        (p.kind, _fmt_date(p.valid_from), _fmt_date(p.valid_to), _money(p.amount), _money(p.vat_rate))
+        for p in prices
+    ]
+    r = _write_table(
+        ws, r, ["Art", "Gültig von", "Gültig bis", "Betrag", "MwSt %"],
+        price_rows, widths=[18, 12, 12, 12, 10], money_cols=(4, 5),
+    ) + 1
+
+    ws.cell(r, 1, "Zählerstände").font = _HEADER_FONT
+    r += 1
+    readings = session.scalars(
+        select(models.StromReading)
+        .where(models.StromReading.property_id == property_id)
+        .order_by(models.StromReading.role, models.StromReading.reading_date)
+    ).all()
+    read_rows = [
+        (
+            x.role,
+            _fmt_date(x.reading_date),
+            _num(x.value),
+            "ja" if x.vor_zaehlerwechsel else "",
+            _num(x.neuer_zaehler_start) if x.vor_zaehlerwechsel else "",
+        )
+        for x in readings
+        if start_bound <= x.reading_date <= ye
+    ]
+    r = _write_table(
+        ws, r, ["Rolle", "Datum", "Stand (kWh)", "Zählerwechsel", "Neustart"],
+        read_rows, widths=[18, 12, 14, 14, 12], money_cols=(5,),
+    ) + 1
+
+    try:
+        res = strom_service.berechnung(session, property_id, ys, ye)
+    except ValueError:
+        res = None
+    if res is not None and res.get("hauptzaehler") is not None:
+        ws.cell(r, 1, "Berechnung").font = _HEADER_FONT
+        r += 1
+        hz = res["hauptzaehler"]
+        calc_rows = [("Hauptzähler", None, _num(hz["consumption"]), None, None, None)]
+        unter = res.get("unterzaehler")
+        if unter is not None and Decimal(str(unter.get("consumption", 0))) > 0:
+            calc_rows.append(("− Unterzähler (Heizstrom)", None, _num(unter["consumption"]), None, None, None))
+            calc_rows.append(("= Nettoverbrauch", None, _num(res.get("netto_verbrauch", 0)), None, None, None))
+        for pos in res["positionen"]:
+            calc_rows.append(
+                (
+                    pos["art"],
+                    _money(pos["satz"]),
+                    _num(pos["menge"]),
+                    _money(pos["netto"]),
+                    _money(pos["vat"]),
+                    _money(pos["brutto"]),
+                )
+            )
+        _write_table(
+            ws, r,
+            ["Position", "Satz (€)", "Menge", "Netto (€)", "MwSt (€)", "Brutto (€)"],
+            calc_rows, widths=[24, 12, 12, 12, 12, 12], money_cols=(2, 4, 5, 6),
+        )
+
+
+def _add_wasser_sheet(wb, session, property_id, year, ys, ye):
+    """Tarife, Haupt-/Wohnungszählerstände und Berechnung des Wasser-Moduls."""
+    ws = wb.create_sheet("Wasser")
+    ws["A1"] = f"Wasser {year}"
+    ws["A1"].font = _TITLE_FONT
+    start_bound = date(year - 1, 12, 31)
+
+    r = 3
+    ws.cell(r, 1, "Tarife").font = _HEADER_FONT
+    r += 1
+    prices = session.scalars(
+        select(models.WasserPrice)
+        .where(models.WasserPrice.property_id == property_id)
+        .order_by(models.WasserPrice.kind, models.WasserPrice.valid_from)
+    ).all()
+    price_rows = [
+        (p.kind, _fmt_date(p.valid_from), _fmt_date(p.valid_to), _money(p.amount), _money(p.vat_rate))
+        for p in prices
+    ]
+    r = _write_table(
+        ws, r, ["Art", "Gültig von", "Gültig bis", "Betrag", "MwSt %"],
+        price_rows, widths=[18, 12, 12, 12, 10], money_cols=(4, 5),
+    ) + 1
+
+    ws.cell(r, 1, "Hauptzählerstände").font = _HEADER_FONT
+    r += 1
+    readings = session.scalars(
+        select(models.WasserReading)
+        .where(models.WasserReading.property_id == property_id)
+        .order_by(models.WasserReading.reading_date)
+    ).all()
+    read_rows = [
+        (
+            _fmt_date(x.reading_date),
+            _num(x.value),
+            "ja" if x.vor_zaehlerwechsel else "",
+            _num(x.neuer_zaehler_start) if x.vor_zaehlerwechsel else "",
+        )
+        for x in readings
+        if start_bound <= x.reading_date <= ye
+    ]
+    r = _write_table(
+        ws, r, ["Datum", "Stand (m³)", "Zählerwechsel", "Neustart"],
+        read_rows, widths=[12, 14, 14, 12], money_cols=(4,),
+    ) + 1
+
+    units = session.scalars(
+        select(models.LeaseUnit).where(models.LeaseUnit.property_id == property_id)
+    ).all()
+    unit_ids = [u.id for u in units]
+    meters = session.scalars(
+        select(models.Meter)
+        .where(models.Meter.lease_unit_id.in_(unit_ids))
+        .order_by(models.Meter.name, models.Meter.meter_type)
+    ).all()
+    if meters:
+        ws.cell(r, 1, "Wohnungszähler").font = _HEADER_FONT
+        r += 1
+        meter_rows = []
+        for m in meters:
+            for rd in m.readings:
+                if start_bound <= rd.reading_date <= ye:
+                    meter_rows.append(
+                        (
+                            m.name,
+                            m.lease_unit.designation if m.lease_unit else "",
+                            m.meter_type.value,
+                            _fmt_date(rd.reading_date),
+                            _num(rd.value),
+                            "ja" if rd.vor_zaehlerwechsel else "",
+                            _num(rd.neuer_zaehler_start) if rd.vor_zaehlerwechsel else "",
+                        )
+                    )
+        r = _write_table(
+            ws, r,
+            ["Zähler", "Wohnung", "Art", "Datum", "Stand (m³)", "Zählerwechsel", "Neustart"],
+            meter_rows, widths=[24, 20, 18, 12, 12, 14, 12], money_cols=(7,),
+        ) + 1
+
+    try:
+        res = wasser_service.berechnung(session, property_id, ys, ye)
+    except ValueError:
+        res = None
+    if res is not None:
+        ws.cell(r, 1, "Berechnung").font = _HEADER_FONT
+        r += 1
+        plan = res.get("plan")
+        calc_rows = []
+        if plan == "B" and res.get("hauptzaehler"):
+            calc_rows.append(("Hauptzähler", None, _num(res["hauptzaehler"]["consumption"]), None, None, None))
+        elif plan == "A":
+            calc_rows.append(("Wohnungsverbrauch", None, _num(res["verbrauch"]), None, None, None))
+        for pos in res["positionen"]:
+            calc_rows.append(
+                (
+                    pos["art"],
+                    _money(pos["satz"]),
+                    _num(pos["menge"]),
+                    _money(pos["netto"]),
+                    _money(pos["vat"]),
+                    _money(pos["brutto"]),
+                )
+            )
+        _write_table(
+            ws, r,
+            ["Position", "Satz (€)", "Menge", "Netto (€)", "MwSt (€)", "Brutto (€)"],
+            calc_rows, widths=[24, 12, 12, 12, 12, 12], money_cols=(2, 4, 5, 6),
+        )
+
+
+def _add_techem_sheet(wb, session, property_id, year, ys, ye):
+    """Heizkostenblätter (Techem), die das Abrechnungsjahr berühren."""
+    ws = wb.create_sheet("Techem")
+    ws["A1"] = f"Techem {year}"
+    ws["A1"].font = _TITLE_FONT
+    ws["A2"] = "Heizkostenblätter (fließen nicht in die Mieterabrechnung ein)"
+    ws["A2"].font = Font(italic=True, size=9)
+
+    records = session.scalars(
+        select(models.TechemRecord)
+        .where(models.TechemRecord.property_id == property_id)
+        .order_by(models.TechemRecord.von)
+    ).all()
+    rows = [
+        (
+            _fmt_date(x.von),
+            _fmt_date(x.bis),
+            _num(x.gas_kwh),
+            _money(x.gas_cost),
+            _money(x.maintenance_cost),
+            _money(x.chimney_cost),
+            x.notes or "",
+        )
+        for x in records
+        if not (x.bis < ys or x.von > ye)
+    ]
+    _write_table(
+        ws, 4,
+        ["Heizperiode von", "bis", "Gas (kWh)", "Gaskosten (€)", "Wartung (€)", "Kamin (€)", "Notizen"],
+        rows, widths=[16, 12, 12, 14, 14, 12, 40], money_cols=(4, 5, 6),
+    )
+
+
+def _add_vorauszahlungen_sheet(wb, session, property_id, year, ys, ye):
+    """Vorauszahlungen der im Jahr aktiven Mieter."""
+    ws = wb.create_sheet("Vorauszahlungen")
+    ws["A1"] = f"Vorauszahlungen {year}"
+    ws["A1"].font = _TITLE_FONT
+
+    units = session.scalars(
+        select(models.LeaseUnit).where(models.LeaseUnit.property_id == property_id)
+    ).all()
+    rows = []
+    for u in units:
+        for t in u.tenants:
+            occ_start = max(t.move_in, ys)
+            occ_end = min(t.move_out, ye) if t.move_out else ye
+            if occ_start > occ_end:
+                continue
+            payments = list(t.advance_payments)
+            if payments:
+                for ap in payments:
+                    rows.append((t.name, u.designation, _fmt_date(ap.valid_from), _money(ap.amount)))
+            else:
+                rows.append((t.name, u.designation, "—", _money(t.monthly_advance)))
+    _write_table(
+        ws, 3, ["Mieter", "Wohnung", "Gültig ab", "Betrag (€/Monat)"],
+        rows, widths=[24, 20, 12, 18], money_cols=(4,),
+    )
+
+
 def generate_settlement_excel(session, property_id: int, year: int) -> bytes:
-    """Erzeugt die xlsx-Matrix (Kostenarten × Mieter) für ein Objekt und Jahr."""
+    """Erzeugt die komplette xlsx-Arbeitsmappe für ein Objekt und Jahr."""
     result = compute_settlement(session, property_id, year)
     ys, ye = year_bounds(year)
 
@@ -173,6 +598,14 @@ def generate_settlement_excel(session, property_id: int, year: int) -> bytes:
     ws.freeze_panes = "D7"
     if last_data_row >= first_data_row:
         ws.auto_filter.ref = f"A{header_row}:{get_column_letter(3 + n_tenants)}{last_data_row}"
+
+    # --- Ausgangsdaten des Abrechnungsjahres als weitere Blätter ----------------
+    _add_stammdaten_sheet(wb, session, result, property_id, year, ys, ye)
+    _add_rechnungen_sheet(wb, session, property_id, year, ys, ye)
+    _add_strom_sheet(wb, session, property_id, year, ys, ye)
+    _add_wasser_sheet(wb, session, property_id, year, ys, ye)
+    _add_techem_sheet(wb, session, property_id, year, ys, ye)
+    _add_vorauszahlungen_sheet(wb, session, property_id, year, ys, ye)
 
     # Hinweise als eigenes Blatt
     if result.warnings:

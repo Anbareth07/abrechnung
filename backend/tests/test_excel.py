@@ -50,7 +50,8 @@ def test_excel_generation(session):
     assert data[:2] == b"PK"  # zip/xlsx-Signatur
 
     wb = openpyxl.load_workbook(BytesIO(data))
-    assert "Abrechnung 2026" in wb.sheetnames
+    for sheet in ("Abrechnung 2026", "Stammdaten", "Rechnungen", "Strom", "Wasser"):
+        assert sheet in wb.sheetnames
     ws = wb["Abrechnung 2026"]
 
     assert ws["A1"].value == "Nebenkostenabrechnung 2026"

@@ -402,12 +402,6 @@ export default function InvoicesPage() {
 
           <Group grow>
             <Select
-              label="Rechnungstyp"
-              data={[{ value: "RECHNUNG", label: "Rechnung" }]}
-              value="RECHNUNG"
-              onChange={() => {}}
-            />
-            <Select
               label="Kostenstelle"
               placeholder="Kostenstelle wählen"
               data={propConfigs.map((c) => ({
@@ -426,7 +420,9 @@ export default function InvoicesPage() {
               label="Wohnung (je Wohnung)"
               placeholder="Wohnung wählen"
               data={(units.list.data ?? [])
-                .filter((u) => u.property_id === Number(form.property_id))
+                .filter(
+                  (u) => u.property_id === Number(form.property_id) && Number(u.living_area) > 0,
+                )
                 .map((u) => ({ value: String(u.id), label: u.designation }))}
               value={form.lease_unit_id || null}
               onChange={(v) => setForm({ ...form, lease_unit_id: v ?? "" })}
