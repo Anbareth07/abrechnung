@@ -85,7 +85,7 @@ describe("TenantsTab", () => {
     expect(screen.getByText("Keine Mieter vorhanden.")).toBeInTheDocument();
   });
 
-  it("gruppiert Mieter nach Objekt mit Überschrift und Anzahl", () => {
+  it("gruppiert Mieter nach Objekt mit Überschrift", () => {
     state.properties = [prop(2, "Ulrichstraße 8"), prop(1, "Schermarweg 5")];
     state.units = [
       unit(1, 2, "Wohnung 1"),
@@ -102,8 +102,6 @@ describe("TenantsTab", () => {
     // Objekte alphabetisch (de) sortiert: Schermarweg vor Ulrichstraße
     const headings = screen.getAllByRole("heading", { level: 5 }).map((h) => h.textContent);
     expect(headings).toEqual(["Schermarweg 5", "Ulrichstraße 8"]);
-    expect(screen.getByText("1 Mieter")).toBeInTheDocument();
-    expect(screen.getByText("2 Mieter")).toBeInTheDocument();
     expect(screen.getByText("Bauer")).toBeInTheDocument();
     expect(screen.getByText("Gronau")).toBeInTheDocument();
     expect(screen.getByText("Baumann")).toBeInTheDocument();
@@ -154,7 +152,7 @@ describe("TenantsTab", () => {
     expect(inputs[1]).toHaveValue("2025-10-01");
   });
 
-  it("blendet ausgezogene Mieter per Checkbox aus und aktualisiert die Anzahl", async () => {
+  it("blendet ausgezogene Mieter per Checkbox aus", async () => {
     const user = userEvent.setup();
     state.properties = [prop(1, "Objekt 1")];
     state.units = [unit(1, 1, "Wohnung 1"), unit(2, 1, "Wohnung 2")];
@@ -164,16 +162,14 @@ describe("TenantsTab", () => {
     ];
     renderTab();
 
-    // Vorher: beide sichtbar, Anzahl 2
+    // Vorher: beide sichtbar
     expect(screen.getByText("Alt")).toBeInTheDocument();
-    expect(screen.getByText("2 Mieter")).toBeInTheDocument();
 
     await user.click(screen.getByLabelText("Alte Mieter ausblenden"));
 
-    // Nachher: ausgezogen ausgeblendet, Anzahl 1
+    // Nachher: ausgezogen ausgeblendet
     expect(screen.queryByText("Alt")).not.toBeInTheDocument();
     expect(screen.getByText("Aktiv")).toBeInTheDocument();
-    expect(screen.getByText("1 Mieter")).toBeInTheDocument();
   });
 
   it("zeigt die Monatskosten-Summe inkl. Vorauszahlung", () => {

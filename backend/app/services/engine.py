@@ -15,6 +15,7 @@ from .. import models
 from ..models.enums import AllocationKey, InvoiceKind
 from . import prorata
 from . import strom as strom_service
+from . import wasser as wasser_service
 from .prorata import ZERO, days_in_year, pro_rata_amount, year_bounds
 from .water import WaterResult, compute_water_consumption, unit_water_consumption
 
@@ -32,6 +33,7 @@ class CategoryLine:
     name: str
     allocation_key: str
     year_cost: Decimal
+    cost_category_id: Optional[int] = None
 
 
 @dataclass
@@ -298,7 +300,9 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
         cat = cfg.cost_category
         invs = invoices_by_cat.get(cat.id, [])
         year_cost = _category_year_cost(invs, year)
-        category_lines.append(CategoryLine(cat.code, cat.name, cfg.allocation_key.value, year_cost))
+        category_lines.append(
+            CategoryLine(cat.code, cat.name, cfg.allocation_key.value, year_cost, cat.id)
+        )
         if cfg.allocation_key == models.AllocationKey.CONSUMPTION:
             water_configured = True
 
@@ -328,23 +332,70 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
                 # Kostenstelle ohne Umlage-Zeile → eigene "Strom"-Zeile als Fallback
                 _append_strom_line(category_lines, configs, strom_brutto)
 
+    # Wasser (Plan B): Kosten aus dem Wasser-Modul (Tarife + Hauptzähler) automatisch
+    # in die zugeordneten Kostenstellen einrechnen. Die Verteilung folgt dem
+    # Umlageschlüssel der Kostenstelle. Gesamtkosten:
+    #   Trink-/Schmutzwasser aus Hauptzähler-Verbrauch, Grundgebühr nach Tagen,
+    #   Niederschlagswasser €/m²/Jahr (versiegelte Fläche) nach Tagen.
+    # Grundgebühr läuft über die Trinkwasser-Kostenstelle mit.
+    try:
+        wasser_res = wasser_service.berechnung(session, property_id, ys, ye)
+    except ValueError:
+        wasser_res = None
+    if wasser_res is not None:
+        wasser_brutto: dict[str, Decimal] = {}
+        for pos in wasser_res["positionen"]:
+            wasser_brutto[pos["art"]] = wasser_brutto.get(pos["art"], ZERO) + Decimal(
+                str(pos["brutto"])
+            )
+
+        def _merge_wasser(category_id, amount):
+            if not category_id or amount <= 0:
+                return
+            target_code = category_code_by_id.get(category_id)
+            if target_code is None:
+                return
+            for cl in category_lines:
+                if cl.code == target_code:
+                    cl.year_cost += amount
+                    return
+            warnings.append(
+                f"Wasserkosten können nicht verteilt werden: Kostenstelle '{target_code}' "
+                "hat keinen Umlageschlüssel."
+            )
+
+        _merge_wasser(
+            prop.wasser_trinkwasser_category_id,
+            wasser_brutto.get("TRINKWASSER", ZERO) + wasser_brutto.get("GRUNDGEBUEHR", ZERO),
+        )
+        _merge_wasser(
+            prop.wasser_schmutzwasser_category_id, wasser_brutto.get("SCHMUTZWASSER", ZERO)
+        )
+        _merge_wasser(
+            prop.wasser_niederschlag_category_id,
+            wasser_brutto.get("NIEDERSCHLAGSWASSER", ZERO),
+        )
+
     water_total_cost = sum(
         (cl.year_cost for cl in category_lines if cl.allocation_key == "CONSUMPTION"), ZERO
     )
 
-    water = compute_water_consumption(session, property_id, year) if water_configured else None
+    water = (
+        compute_water_consumption(
+            session, property_id, year, include_washing_machine=bool(prop.wasser_waschmaschinen_aktiv)
+        )
+        if water_configured
+        else None
+    )
     if water is not None:
         warnings.extend(water.warnings)
 
     cbm_price: Optional[Decimal] = None
-    garden_water_cost = ZERO
     if water is not None:
         if water.total_consumption > 0:
             cbm_price = water_total_cost / water.total_consumption
         else:
             warnings.append("Gesamtwasserverbrauch ist 0 – cbm-Preis kann nicht berechnet werden.")
-        if cbm_price is not None:
-            garden_water_cost = water.garden_consumption * cbm_price
 
     tenant_lines: list[TenantLine] = []
     for t, tenant_days in active:
@@ -356,26 +407,74 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
         breakdown: dict[str, Decimal] = {}
         details: list[CategoryShare] = []
 
+        # Individueller Wasserverbrauch des Mieters (Basis für die CONSUMPTION-Zeilen
+        # und die Hinweise zu fehlenden Zählerständen zu Ein-/Auszug).
+        unit_consumption: Optional[Decimal] = None
+        if water is not None and cbm_price is not None:
+            unit_consumption, missing_meters = unit_water_consumption(
+                session,
+                unit.id,
+                occ_start,
+                occ_end,
+                include_washing_machine=bool(prop.wasser_waschmaschinen_aktiv),
+            )
+            if missing_meters:
+                warnings.append(
+                    f"Mieter {t.name}: Zählerstand zu Ein-/Auszug fehlt "
+                    f"({', '.join(missing_meters)})."
+                )
+            elif tenant_days < diy:
+                warnings.append(
+                    f"Mieter {t.name}: Mietdauer {tenant_days}/{diy} Tage – für exakte "
+                    f"Wasserkosten Zählerstände zu Ein-/Auszug erfassen."
+                )
+
+        # Je konfigurierter Kostenstelle (Umlageschlüssel) eine Zeile – in der Reihenfolge
+        # der Stammdaten (sort_order). CONSUMPTION wird nach Verbrauch, WOHNUNG nach Wohnung
+        # verteilt; so erscheinen z. B. Trinkwasser-/Schmutzwassergebühr als eigene
+        # Kostenstellen statt als anonyme „Wasserkosten (Verbrauch)“.
         for cl in category_lines:
             if cl.allocation_key == "WF":
-                area, area_total = unit.living_area, total_wf
                 basis_label, basis_total = "Wohnfläche", total_wf
                 basis_share = unit.living_area
+                if total_wf > 0:
+                    amount = cl.year_cost * (unit.living_area / total_wf) * time_factor
+                else:
+                    amount = ZERO
+                    warnings.append(f"Gesamtfläche 0 für {cl.name} – Anteil 0 gesetzt.")
+                breakdown[cl.code] = amount
             elif cl.allocation_key == "NF":
-                area, area_total = unit.utility_area, total_nf
                 basis_label, basis_total = "Nutzfläche", total_nf
                 basis_share = unit.utility_area
+                if total_nf > 0:
+                    amount = cl.year_cost * (unit.utility_area / total_nf) * time_factor
+                else:
+                    amount = ZERO
+                    warnings.append(f"Gesamtfläche 0 für {cl.name} – Anteil 0 gesetzt.")
+                breakdown[cl.code] = amount
+            elif cl.allocation_key == "CONSUMPTION":
+                basis_label, basis_total = "Verbrauch", (
+                    water.total_consumption if water is not None else ZERO
+                )
+                basis_share = unit_consumption if unit_consumption is not None else ZERO
+                if (
+                    water is not None
+                    and water.total_consumption > 0
+                    and unit_consumption is not None
+                ):
+                    amount = cl.year_cost * (unit_consumption / water.total_consumption)
+                else:
+                    amount = ZERO
+            elif cl.allocation_key == "WOHNUNG":
+                # Wohneinheitenbezogene Kosten (z. B. Schornsteinfeger/Wartung je Wohnung).
+                # Ohne Rechnung für die Wohnung erscheint die Kostenstelle mit 0 €.
+                val = unit_costs.get((unit.id, cl.cost_category_id), ZERO)
+                amount = val * time_factor
+                basis_label, basis_total, basis_share = "Wohnung", None, None
+                breakdown[cl.code] = breakdown.get(cl.code, ZERO) + amount
             else:
-                # WOHNUNG/CONSUMPTION/NONE: Wohnungskosten laufen wohnungbezogen
-                # (eine Rechnung gilt exakt für eine Wohnung) – kein objektweiter Split.
-                continue
+                continue  # NONE: keine Verteilung
 
-            if area_total > 0:
-                amount = cl.year_cost * (area / area_total) * time_factor
-            else:
-                amount = ZERO
-                warnings.append(f"Gesamtfläche 0 für {cl.name} – Anteil 0 gesetzt.")
-            breakdown[cl.code] = amount
             details.append(
                 CategoryShare(
                     code=cl.code,
@@ -390,59 +489,20 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
                 )
             )
 
-        if water is not None:
-            if cbm_price is not None and total_wf > 0:
-                breakdown["WASSER_GARTEN"] = (
-                    garden_water_cost * (unit.living_area / total_wf) * time_factor
-                )
-                details.append(
-                    CategoryShare(
-                        code="WASSER_GARTEN",
-                        name="Wasserverbrauch Garten",
-                        allocation_key="WF",
-                        year_cost=garden_water_cost,
-                        basis_label="Wohnfläche",
-                        basis_total=total_wf,
-                        basis_share=unit.living_area,
-                        days=tenant_days,
-                        amount=breakdown["WASSER_GARTEN"],
-                    )
-                )
-            else:
-                breakdown["WASSER_GARTEN"] = ZERO
+        if water is not None and cbm_price is not None:
+            # Aggregierter Verbrauchsanteil für Saldo/Snapshot – die einzelnen
+            # CONSUMPTION-Kostenstellen stehen oben als eigene Zeilen.
+            # Gartenwasser wird nicht mehr berücksichtigt.
+            breakdown["WASSER_VERBRAUCH"] = (unit_consumption or ZERO) * cbm_price
 
-            if cbm_price is not None:
-                unit_consumption, missing_meters = unit_water_consumption(
-                    session, unit.id, occ_start, occ_end
-                )
-                if missing_meters:
-                    warnings.append(
-                        f"Mieter {t.name}: Zählerstand zu Ein-/Auszug fehlt "
-                        f"({', '.join(missing_meters)})."
-                    )
-                elif tenant_days < diy:
-                    warnings.append(
-                        f"Mieter {t.name}: Mietdauer {tenant_days}/{diy} Tage – für exakte "
-                        f"Wasserkosten Zählerstände zu Ein-/Auszug erfassen."
-                    )
-                breakdown["WASSER_VERBRAUCH"] = unit_consumption * cbm_price
-                details.append(
-                    CategoryShare(
-                        code="WASSER_VERBRAUCH",
-                        name="Wasserkosten (Verbrauch)",
-                        allocation_key="CONSUMPTION",
-                        year_cost=water_total_cost,
-                        basis_label="Verbrauch",
-                        basis_total=water.total_consumption,
-                        basis_share=unit_consumption,
-                        days=tenant_days,
-                        amount=breakdown["WASSER_VERBRAUCH"],
-                    )
-                )
-
-        # Wohneinheitenbezogene Kosten (z. B. Schornsteinfeger je Wohnung)
+        # Wohneinheitenbezogene Kosten OHNE Umlage-Konfiguration (automatisch je
+        # Rechnungsart angelegte Kostenarten) am Ende ergänzen – konfigurierte
+        # WOHNUNG-Zeilen stehen oben an ihrer sort_order-Position.
+        config_wohnung_ids = {
+            cl.cost_category_id for cl in category_lines if cl.allocation_key == "WOHNUNG"
+        }
         for (uid, cat_id), val in unit_costs.items():
-            if uid != unit.id:
+            if uid != unit.id or cat_id in config_wohnung_ids:
                 continue
             code = category_code_by_id.get(cat_id)
             if code is None:
@@ -494,7 +554,7 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
         individual_total = sum(
             (ln.breakdown.get("WASSER_VERBRAUCH", ZERO) for ln in tenant_lines), ZERO
         )
-        unallocated_water = money(water_total_cost - garden_water_cost - individual_total)
+        unallocated_water = money(water_total_cost - individual_total)
         if abs(unallocated_water) > CENTS:
             warnings.append(
                 f"Restwasser (Leerstand/Abweichung) nicht umgelegt: {unallocated_water} EUR."
@@ -512,7 +572,7 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
         water=water,
         water_total_cost=water_total_cost,
         water_price_per_m3=cbm_price,
-        garden_water_cost=garden_water_cost,
+        garden_water_cost=ZERO,
         unallocated_water=unallocated_water,
         warnings=warnings,
     )

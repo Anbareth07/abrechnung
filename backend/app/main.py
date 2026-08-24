@@ -11,6 +11,7 @@ from .api import (
     strom,
     techem,
     tenants,
+    wasser,
 )
 
 app = FastAPI(title="Nebenkostenabrechnung", version="0.1.0")
@@ -33,6 +34,7 @@ app.include_router(meters.router)
 app.include_router(meters.reading_router)
 app.include_router(techem.router)
 app.include_router(strom.router)
+app.include_router(wasser.router)
 app.include_router(settlements.router)
 
 

@@ -207,7 +207,6 @@ def get_finalized_settlement(property_id: int, year: int, db: Session = Depends(
     ).scalars().all()
     names = {c.code: c.name for c in cats}
     # Vom Engine erzeugte Sondercodes (Wasser) mit sprechenden Namen ergänzen
-    names.setdefault("WASSER_GARTEN", "Wasserverbrauch Garten")
     names.setdefault("WASSER_VERBRAUCH", "Wasserkosten (Verbrauch)")
     return {
         "property_id": property_id,

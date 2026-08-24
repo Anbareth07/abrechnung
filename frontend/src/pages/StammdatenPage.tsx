@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Accordion,
   Badge,
   Button,
   Checkbox,
@@ -97,16 +98,30 @@ function PropertiesTab() {
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<Property | null>(null);
   const [del, setDel] = useState<Property | null>(null);
-  const [form, setForm] = useState({ name: "", street: "", zip_code: "", city: "", is_test: false });
+  const [form, setForm] = useState({
+    name: "",
+    street: "",
+    zip_code: "",
+    city: "",
+    is_test: false,
+    wasser_versiegelte_flaeche: "",
+  });
 
   const openCreate = () => {
     setEdit(null);
-    setForm({ name: "", street: "", zip_code: "", city: "", is_test: false });
+    setForm({ name: "", street: "", zip_code: "", city: "", is_test: false, wasser_versiegelte_flaeche: "" });
     setOpen(true);
   };
   const openEdit = (p: Property) => {
     setEdit(p);
-    setForm({ name: p.name, street: p.street, zip_code: p.zip_code, city: p.city, is_test: Boolean(p.is_test) });
+    setForm({
+      name: p.name,
+      street: p.street,
+      zip_code: p.zip_code,
+      city: p.city,
+      is_test: Boolean(p.is_test),
+      wasser_versiegelte_flaeche: p.wasser_versiegelte_flaeche != null ? String(Number(p.wasser_versiegelte_flaeche)) : "",
+    });
     setOpen(true);
   };
   const save = () => {
@@ -114,8 +129,13 @@ function PropertiesTab() {
       setOpen(false);
       ok("Gespeichert");
     };
-    if (edit) update.mutate({ id: edit.id, data: form }, { onSuccess: done, onError: err });
-    else create.mutate(form, { onSuccess: done, onError: err });
+    const payload = {
+      ...form,
+      wasser_versiegelte_flaeche:
+        form.wasser_versiegelte_flaeche === "" ? null : Number(form.wasser_versiegelte_flaeche),
+    };
+    if (edit) update.mutate({ id: edit.id, data: payload }, { onSuccess: done, onError: err });
+    else create.mutate(payload, { onSuccess: done, onError: err });
   };
 
   return (
@@ -137,6 +157,11 @@ function PropertiesTab() {
               <Table.Td>{p.name}</Table.Td>
               <Table.Td>
                 {[p.street, p.zip_code, p.city].filter(Boolean).join(", ")}
+                {p.wasser_versiegelte_flaeche != null && (
+                  <Text size="xs" c="dimmed">
+                    Versiegelte Fläche: {fmt(Number(p.wasser_versiegelte_flaeche), 2)} m²
+                  </Text>
+                )}
               </Table.Td>
               <Table.Td>
                 <Group gap="xs" justify="flex-end">
@@ -193,6 +218,14 @@ function PropertiesTab() {
               onChange={(e) => setForm({ ...form, city: e.currentTarget.value })}
             />
           </Group>
+          <NumberInput
+            label="Versiegelte Fläche (m²)"
+            description="Berechnungsgrundlage für Niederschlagswasser (€/m²)"
+            value={form.wasser_versiegelte_flaeche === "" ? "" : Number(form.wasser_versiegelte_flaeche)}
+            onChange={(v) => setForm({ ...form, wasser_versiegelte_flaeche: String(v ?? "") })}
+            decimalScale={2}
+            min={0}
+          />
           <Checkbox
             label="Testdaten (in Übersicht/Dropdowns ausblendbar)"
             checked={form.is_test}
@@ -275,9 +308,6 @@ function UnitsTab() {
         <Stack key={property.id} mb="lg">
           <Group>
             <Title order={5}>{property.name}</Title>
-            <Badge variant="light" size="sm">
-              {gUnits.length} {gUnits.length === 1 ? "Einheit" : "Einheiten"}
-            </Badge>
             <Text size="sm" c="dimmed">
               WF {fmt(wf, 2)} · NF {fmt(nf, 2)} m²
             </Text>
@@ -492,9 +522,6 @@ export function TenantsTab() {
         <Stack key={property.id} mb="lg">
           <Group>
             <Title order={5}>{property.name}</Title>
-            <Badge variant="light" size="sm">
-              {gTenants.length} Mieter
-            </Badge>
           </Group>
           <Table striped highlightOnHover>
             <Table.Thead>
@@ -811,15 +838,13 @@ export function ConfigsTab() {
         const a = adds[property.id] ?? { name: "", key: "WF" };
         const total = gConfigs.length;
         return (
-          <Stack key={property.id} mb="lg">
-            <Group>
-              <Title order={5}>{property.name}</Title>
-              <Badge variant="light" size="sm">
-                {total} {total === 1 ? "Kostenart" : "Kostenarten"}
-              </Badge>
-            </Group>
-
-            <Table striped highlightOnHover>
+          <Accordion key={property.id} mb="lg" defaultValue={String(property.id)}>
+            <Accordion.Item value={String(property.id)}>
+              <Accordion.Control>
+                <Title order={5}>{property.name}</Title>
+              </Accordion.Control>
+              <Accordion.Panel>
+                <Table striped highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Reihenfolge</Table.Th>
@@ -912,7 +937,9 @@ export function ConfigsTab() {
                 Hinzufügen
               </Button>
             </Group>
-          </Stack>
+              </Accordion.Panel>
+            </Accordion.Item>
+          </Accordion>
         );
       })}
 

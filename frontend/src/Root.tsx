@@ -8,11 +8,13 @@ import InvoicesPage from "./pages/InvoicesPage";
 import SettlementPage from "./pages/SettlementPage";
 import StromPage from "./pages/StromPage";
 import TechemPage from "./pages/TechemPage";
+import WasserPage from "./pages/WasserPage";
 
 const links = [
   { path: "/stammdaten", label: "Stammdaten" },
   { path: "/rechnungen", label: "Rechnungen" },
   { path: "/strom", label: "Strom" },
+  { path: "/wasser", label: "Wasser" },
   { path: "/abrechnung", label: "Abrechnung" },
   { path: "/techem", label: "Techem" },
 ];
@@ -61,6 +63,7 @@ export default function Root() {
             <Route path="/stammdaten" element={<StammdatenPage />} />
             <Route path="/rechnungen" element={<InvoicesPage />} />
             <Route path="/strom" element={<StromPage />} />
+            <Route path="/wasser" element={<WasserPage />} />
             <Route path="/abrechnung" element={<SettlementPage />} />
             <Route path="/techem" element={<TechemPage />} />
           </Routes>

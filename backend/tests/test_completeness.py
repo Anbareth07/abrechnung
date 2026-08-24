@@ -32,6 +32,30 @@ def test_completeness_no_invoice_flag_and_strom_target(session):
     assert not any("Legionellen" in l for l in labels)
 
 
+def test_completeness_skips_wasser_categories(session):
+    """Wasser-Ziel-Kostenstellen (Trink/Schmutz/Niederschlag) werden nicht als fehlend gemeldet."""
+    prop = helpers.make_property(session, "Objekt 4")
+
+    trink = helpers.make_category(session, prop, "trink", "Trinkwassergebühr", AllocationKey.WF)
+    schmutz = helpers.make_category(session, prop, "schmutz", "Schmutzwassergebühr", AllocationKey.WF)
+    grund = helpers.make_category(session, prop, "grundsteuer", "Grundsteuer", AllocationKey.NF)
+    helpers.make_config(session, prop, trink, AllocationKey.WF, 1)
+    helpers.make_config(session, prop, schmutz, AllocationKey.WF, 2)
+    helpers.make_config(session, prop, grund, AllocationKey.NF, 3)
+
+    prop.wasser_trinkwasser_category_id = trink.id
+    prop.wasser_schmutzwasser_category_id = schmutz.id
+    session.commit()
+
+    missing = check_completeness(session, prop.id, 2026)
+    labels = {m.label for m in missing}
+    # Trink-/Schmutzwassergebühr über Wasser-Modul abgedeckt → nicht fehlend
+    assert not any("Trinkwassergebühr" in l for l in labels)
+    assert not any("Schmutzwassergebühr" in l for l in labels)
+    # Grundsteuer (ohne Wasser-Zuordnung) weiterhin fehlend
+    assert "Rechnung fehlt: Grundsteuer" in labels
+
+
 def test_completeness_reports_missing_everything(session):
     prop = helpers.make_property(session, "Objekt 1")
 
@@ -57,10 +81,9 @@ def test_completeness_reports_missing_everything(session):
     assert "Rechnung fehlt: Grundsteuer" in labels
     assert not any("Abfall" in l for l in labels)
 
-    # Zählerstände fehlen an beiden Jahresgrenzen für beide Zähler
-    assert "Zählerstand Jahresanfang fehlt: Garten Nord" in labels
-    assert "Zählerstand Jahresende fehlt: Garten Nord" in labels
+    # Zählerstände fehlen an beiden Jahresgrenzen – Garten-Zähler werden ignoriert
     assert "Zählerstand Jahresanfang fehlt: Wohnung 1 Wasser" in labels
+    assert not any("Garten" in l for l in labels)
 
 
 def test_completeness_ok_when_data_present(session):

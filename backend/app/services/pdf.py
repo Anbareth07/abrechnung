@@ -52,8 +52,13 @@ def generate_tenant_pdf(session, property_id: int, year: int, tenant_id: int) ->
 
     tenant_consumption: Optional[Decimal] = None
     if result.water is not None and result.water_price_per_m3 is not None:
+        _prop = session.get(models.Property, result.property_id)
         tenant_consumption, _ = unit_water_consumption(
-            session, line.lease_unit_id, occ_start, occ_end
+            session,
+            line.lease_unit_id,
+            occ_start,
+            occ_end,
+            include_washing_machine=bool(_prop.wasser_waschmaschinen_aktiv) if _prop else True,
         )
 
     buffer = BytesIO()
@@ -116,19 +121,6 @@ def generate_tenant_pdf(session, property_id: int, year: int, tenant_id: int) ->
                 f"{_g(tenant_consumption, 2)} m³",
                 str(line.tenant_days),
                 _g(amount),
-            ]
-        )
-
-    if "WASSER_GARTEN" in line.breakdown:
-        rows.append(
-            [
-                "Wasserverbrauch Garten",
-                _g(result.garden_water_cost),
-                "Wohnfläche",
-                f"{_g(result.total_wf)} m²",
-                f"{_g(line.living_area)} m²",
-                str(line.tenant_days),
-                _g(line.breakdown["WASSER_GARTEN"]),
             ]
         )
 

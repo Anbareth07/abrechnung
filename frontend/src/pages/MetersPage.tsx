@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  Badge,
   Button,
   Group,
   Modal,
@@ -8,12 +7,14 @@ import {
   Select,
   Stack,
   Table,
+  Text,
   TextInput,
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { api, fmt } from "../api/client";
 import { ConfirmDeleteModal } from "../components/ConfirmDeleteModal";
+import ZaehlerwechselFields from "../components/ZaehlerwechselFields";
 import { useTestData } from "../context/TestDataContext";
 import { useCrud } from "../hooks/useCrud";
 import { testPropertyIds, visibleProperties, visibleUnits } from "../utils/testData";
@@ -144,7 +145,7 @@ export default function MetersPage() {
             <Table.Tr key={m.id}>
               <Table.Td>{m.name}</Table.Td>
               <Table.Td>
-                <Badge variant="light">{TYPE_LABEL[m.meter_type] ?? m.meter_type}</Badge>
+                <Text size="sm" fw={500}>{TYPE_LABEL[m.meter_type] ?? m.meter_type}</Text>
               </Table.Td>
               <Table.Td>{m.unit}</Table.Td>
               <Table.Td>{propName(m.property_id)}</Table.Td>
@@ -224,6 +225,8 @@ function ReadingsSection({ meters }: { meters: Meter[] }) {
   const [meterId, setMeterId] = useState<string | null>(null);
   const [date, setDate] = useState("");
   const [value, setValue] = useState("");
+  const [vor, setVor] = useState(false);
+  const [neuerStart, setNeuerStart] = useState("");
   const [delReading, setDelReading] = useState<MeterReading | null>(null);
 
   const readings = useQuery({
@@ -239,6 +242,8 @@ function ReadingsSection({ meters }: { meters: Meter[] }) {
       qc.invalidateQueries({ queryKey: ["meter-readings"] });
       setDate("");
       setValue("");
+      setVor(false);
+      setNeuerStart("");
       ok("Gespeichert");
     },
     onError: err,
@@ -263,22 +268,38 @@ function ReadingsSection({ meters }: { meters: Meter[] }) {
           w={320}
         />
         {selected && (
-          <>
-            <TextInput type="date" label="Datum" value={date} onChange={(e) => setDate(e.currentTarget.value)} />
-            <NumberInput
-              label={`Wert (${selected.unit})`}
-              value={value}
-              onChange={(v) => setValue(String(v ?? ""))}
-              decimalScale={4}
+          <Stack gap="sm" style={{ flex: 1 }}>
+            <Group>
+              <TextInput type="date" label="Datum" value={date} onChange={(e) => setDate(e.currentTarget.value)} />
+              <NumberInput
+                label={`Wert (${selected.unit})`}
+                value={value}
+                onChange={(v) => setValue(String(v ?? ""))}
+                decimalScale={4}
+              />
+              <Button
+                mt="auto"
+                disabled={!date || value === ""}
+                onClick={() =>
+                  createReading.mutate({
+                    meter_id: Number(meterId),
+                    reading_date: date,
+                    value,
+                    vor_zaehlerwechsel: vor,
+                    neuer_zaehler_start: vor ? Number(neuerStart === "" ? "0" : neuerStart) : 0,
+                  })
+                }
+              >
+                Hinzufügen
+              </Button>
+            </Group>
+            <ZaehlerwechselFields
+              vor={vor}
+              start={neuerStart}
+              onVor={setVor}
+              onStart={setNeuerStart}
             />
-            <Button
-              mt="auto"
-              disabled={!date || value === ""}
-              onClick={() => createReading.mutate({ meter_id: Number(meterId), reading_date: date, value })}
-            >
-              Hinzufügen
-            </Button>
-          </>
+          </Stack>
         )}
       </Group>
 

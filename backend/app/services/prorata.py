@@ -8,6 +8,83 @@ from decimal import Decimal
 ZERO = Decimal("0")
 
 
+def zaehlerwechsel_series(readings: list) -> list[tuple]:
+    """Effektive (monoton steigende) Zählerstandsserie unter Berücksichtigung von Zählerwechseln.
+
+    readings: nach Datum sortierte Liste von Objekten mit `.reading_date`, `.value`,
+    `.vor_zaehlerwechsel` (bool) und `.neuer_zaehler_start` (Decimal, Standard 0).
+    Ein als `vor_zaehlerwechsel` markierter Stand ist der letzte Stand des ALTEN Zählers;
+    der neue Zähler beginnt danach bei `neuer_zaehler_start`. Die Rückgabe enthält
+    (Stand-Objekt, effektiver kumulierter Wert) und ist damit streng monoton steigend.
+    """
+    eff: list[tuple] = []
+    prev_value: Decimal | None = None
+    prev_eff: Decimal | None = None
+    prev_vor = False
+    prev_neu_start = ZERO
+    for r in readings:
+        v = Decimal(r.value)
+        if prev_value is None:
+            eff_v = v
+        elif prev_vor:
+            # Zählerwechsel: neuer Zähler beginnt bei prev_neu_start (Standard 0)
+            eff_v = prev_eff + (v - prev_neu_start)
+        else:
+            eff_v = prev_eff + (v - prev_value)
+        eff.append((r, eff_v))
+        prev_value, prev_eff = v, eff_v
+        prev_vor = bool(getattr(r, "vor_zaehlerwechsel", False))
+        prev_neu_start = Decimal(getattr(r, "neuer_zaehler_start", 0) or 0)
+    return eff
+
+
+def _eff_interpolate(eff: list[tuple], d: date) -> Decimal | None:
+    """Linearer interpolierter Wert der effektiven Serie am Datum d (Clamping an den Rändern)."""
+    if not eff:
+        return None
+    if d <= eff[0][0].reading_date:
+        return eff[0][1]
+    if d >= eff[-1][0].reading_date:
+        return eff[-1][1]
+    lo = max((r for r in eff if r[0].reading_date <= d), key=lambda x: x[0].reading_date)
+    hi = min((r for r in eff if r[0].reading_date >= d), key=lambda x: x[0].reading_date)
+    if lo[0].reading_date == hi[0].reading_date:
+        return lo[1]
+    frac = Decimal((d - lo[0].reading_date).days) / Decimal(
+        (hi[0].reading_date - lo[0].reading_date).days
+    )
+    return lo[1] + (hi[1] - lo[1]) * frac
+
+
+def zaehlerwechsel_consumption(
+    readings: list, start: date, end: date, clamp: bool = False
+) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
+    """Verbrauch im Zeitraum [start, end] (Zählerwechsel-sicher).
+
+    Rückgabe: (consumption, start_reading, end_reading) auf Basis der effektiven
+    (monotonen) Serie. Ohne `clamp` werden die umgebenden Stände (letzter <= start,
+    erster >= end) verwendet und `None` geliefert, wenn diese fehlen; mit `clamp`
+    wird an den Rändern interpoliert (Clamping auf den ersten/letzten Stand).
+    """
+    if not readings:
+        return None, None, None
+    eff = zaehlerwechsel_series(readings)
+    if clamp:
+        s = _eff_interpolate(eff, start)
+        e = _eff_interpolate(eff, end)
+    else:
+        before = [r for r in readings if r.reading_date <= start]
+        after = [r for r in readings if r.reading_date >= end]
+        if not before or not after:
+            return None, None, None
+        eff_map = {r.id: v for r, v in eff}
+        s = eff_map.get(before[-1].id)
+        e = eff_map.get(after[0].id)
+    if s is None or e is None:
+        return None, None, None
+    return max(e - s, ZERO), s, e
+
+
 def days_in_year(year: int) -> int:
     """Anzahl der Tage im Abrechnungsjahr (365 oder 366)."""
     if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0):

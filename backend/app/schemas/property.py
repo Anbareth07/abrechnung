@@ -15,6 +15,12 @@ class PropertyRead(BaseModel):
     city: str
     is_test: bool = False
     strom_allocation_category_id: Optional[int] = None
+    wasser_trinkwasser_category_id: Optional[int] = None
+    wasser_schmutzwasser_category_id: Optional[int] = None
+    wasser_niederschlag_category_id: Optional[int] = None
+    wasser_versiegelte_flaeche: Optional[Decimal] = None
+    strom_unterzaehler_aktiv: bool = True
+    wasser_waschmaschinen_aktiv: bool = True
     created_at: datetime
 
 
@@ -24,6 +30,9 @@ class PropertyCreate(BaseModel):
     zip_code: str = ""
     city: str = ""
     is_test: bool = False
+    wasser_versiegelte_flaeche: Optional[Decimal] = None
+    strom_unterzaehler_aktiv: bool = True
+    wasser_waschmaschinen_aktiv: bool = True
 
 
 class PropertyUpdate(BaseModel):
@@ -33,6 +42,12 @@ class PropertyUpdate(BaseModel):
     city: Optional[str] = None
     is_test: Optional[bool] = None
     strom_allocation_category_id: Optional[int] = None
+    wasser_trinkwasser_category_id: Optional[int] = None
+    wasser_schmutzwasser_category_id: Optional[int] = None
+    wasser_niederschlag_category_id: Optional[int] = None
+    wasser_versiegelte_flaeche: Optional[Decimal] = None
+    strom_unterzaehler_aktiv: Optional[bool] = None
+    wasser_waschmaschinen_aktiv: Optional[bool] = None
 
 
 class LeaseUnitRead(BaseModel):

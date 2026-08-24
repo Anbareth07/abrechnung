@@ -97,12 +97,12 @@ def test_reference_2013_water(session):
     assert result.total_wf == Decimal("206.0")
     assert result.total_nf == Decimal("218.0")
 
-    # Gesamtverbrauch: 35+2 + 40+20 + 31+8 + Garten(1+1) = 138
-    assert result.water.total_consumption == Decimal("138.0")
-    assert result.water.garden_consumption == Decimal("2.0")
+    # Gesamtverbrauch: 35+2 + 40+20 + 31+8 = 136 (ohne Garten)
+    assert result.water.total_consumption == Decimal("136.0")
+    assert result.water.garden_consumption == Decimal("0")
 
-    # cbm-Preis = (309,93 + 225,40) / 138
-    expected_price = Decimal("535.33") / Decimal("138")
+    # cbm-Preis = (309,93 + 225,40) / 136
+    expected_price = Decimal("535.33") / Decimal("136")
     assert result.water_price_per_m3 == expected_price
 
     mieter_a = next(ln for ln in result.tenant_lines if ln.name == "Mieter A")
@@ -114,9 +114,8 @@ def test_reference_2013_water(session):
     assert mieter_d.breakdown["WASSER_VERBRAUCH"] == Decimal("60") * expected_price
     assert mieter_e.breakdown["WASSER_VERBRAUCH"] == Decimal("39") * expected_price
 
-    # Gartenwasser nach Wohnfläche
-    garden_cost = Decimal("2") * expected_price
-    assert mieter_a.breakdown["WASSER_GARTEN"] == garden_cost * (Decimal("76") / Decimal("206"))
+    # Keine Gartenwasser-Zeile mehr
+    assert "WASSER_GARTEN" not in mieter_a.breakdown
 
     # Flächenumlagen: Mieter A NF-Anteil = 76/218, WF-Anteil = 76/206
     assert mieter_a.breakdown["grundsteuer"] == Decimal("155.45") * (Decimal("76") / Decimal("218"))

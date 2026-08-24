@@ -12,13 +12,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import models
-from .prorata import ZERO, year_bounds
+from .prorata import ZERO, year_bounds, zaehlerwechsel_consumption
 
 # Zählertypen, die in die Wasserberechnung einfließen.
+# Gartenwasser-Zähler (GARDEN) werden NICHT mehr berücksichtigt.
 WATER_METER_TYPES = (
     models.MeterType.APARTMENT_WATER,
     models.MeterType.WASHING_MACHINE,
-    models.MeterType.GARDEN,
 )
 
 # Zählertypen, die den individuellen Mieter-Verbrauch bilden.
@@ -77,18 +77,14 @@ def meter_consumption(
 
     before = [r for r in readings if r.reading_date <= start_date]
     after = [r for r in readings if r.reading_date >= end_date]
+    missing = not before or not after
 
-    start = before[-1].value if before else None
-    end = after[0].value if after else None
-    missing = start is None or end is None
-
-    consumption = ZERO
-    if start is not None and end is not None:
-        consumption = end - start
-        if consumption < 0:
-            # Zählerrücklauf/-wechsel – wird als fehlend markiert statt negativ zu rechnen.
-            missing = True
-            consumption = ZERO
+    # Zählerwechsel-sichere Berechnung (Wert-vor-Wechsel + Startwert des neuen Zählers)
+    consumption, start, end = zaehlerwechsel_consumption(readings, start_date, end_date)
+    if missing or consumption is None:
+        missing = True
+        consumption = ZERO
+        start = end = None
 
     return MeterConsumption(
         meter_id=meter_id,
@@ -118,13 +114,21 @@ def _property_water_meters(session: Session, property_id: int):
     ).scalars().all()
 
 
-def compute_water_consumption(session: Session, property_id: int, year: int) -> WaterResult:
-    """Jahres-Gesamt- und Gartenverbrauch für den cbm-Preis (Nenner)."""
+def compute_water_consumption(
+    session: Session, property_id: int, year: int, include_washing_machine: bool = True
+) -> WaterResult:
+    """Jahres-Gesamtverbrauch für den cbm-Preis (Nenner).
+
+    Gartenwasser wird nicht mehr berücksichtigt (kein Einfluss auf den
+    Gesamtverbrauch und damit den cbm-Preis).
+    """
     ys, ye = year_bounds(year)
     result = WaterResult()
 
     for meter in _property_water_meters(session, property_id):
         if meter.meter_type not in WATER_METER_TYPES:
+            continue
+        if meter.meter_type == models.MeterType.WASHING_MACHINE and not include_washing_machine:
             continue
 
         mc = meter_consumption(session, meter.id, ys, ye)
@@ -135,24 +139,31 @@ def compute_water_consumption(session: Session, property_id: int, year: int) -> 
             continue
 
         result.total_consumption += mc.consumption
-        if meter.meter_type == models.MeterType.GARDEN:
-            result.garden_consumption += mc.consumption
 
     return result
 
 
 def unit_water_consumption(
-    session: Session, unit_id: int, start_date: date, end_date: date
+    session: Session,
+    unit_id: int,
+    start_date: date,
+    end_date: date,
+    include_washing_machine: bool = True,
 ) -> tuple[Decimal, list[str]]:
     """Individueller Verbrauch einer Mieteinheit (Wohnungs- + Waschmaschinen-Zähler).
 
     Liefert (Verbrauch, fehlende Zählernamen). Der Verbrauch summiert nur Zähler
-    mit vollständiger Randablesung; fehlende werden separat gemeldet.
+    mit vollständiger Randablesung; fehlende werden separat gemeldet. Ohne
+    Waschmaschinen-Zähler (include_washing_machine=False) zählen nur die
+    Wohnungs-Wasserzähler.
     """
+    meter_types = UNIT_WATER_METER_TYPES
+    if not include_washing_machine:
+        meter_types = (models.MeterType.APARTMENT_WATER,)
     meters = session.execute(
         select(models.Meter).where(
             models.Meter.lease_unit_id == unit_id,
-            models.Meter.meter_type.in_(UNIT_WATER_METER_TYPES),
+            models.Meter.meter_type.in_(meter_types),
         )
     ).scalars().all()
 

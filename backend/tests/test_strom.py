@@ -99,6 +99,27 @@ def test_berechnung_interpolation_unterzaehler_und_kosten(client):
     assert data["summen"]["brutto"] == pytest.approx((240 + 16 + expected_gg) * 1.19, abs=1e-6)
 
 
+def test_unterzaehler_abschaltbar(client):
+    """Unterzähler lässt sich pro Objekt abschalten → Werte fließen nicht ein."""
+    p = _objekt(client)
+    client.post("/strom/readings", json={"property_id": p["id"], "role": "HAUPTZAEHLER", "reading_date": "2025-01-01", "value": "1000"})
+    client.post("/strom/readings", json={"property_id": p["id"], "role": "HAUPTZAEHLER", "reading_date": "2025-12-31", "value": "2000"})
+    client.post("/strom/readings", json={"property_id": p["id"], "role": "UNTERZAEHLER", "reading_date": "2025-01-01", "value": "100"})
+    client.post("/strom/readings", json={"property_id": p["id"], "role": "UNTERZAEHLER", "reading_date": "2025-12-31", "value": "300"})
+    client.post("/strom/prices", json={"property_id": p["id"], "kind": "ARBEITSPREIS", "valid_from": "2025-01-01", "valid_to": "2025-12-31", "amount": "0.30"})
+
+    # aktiv (Standard): Unterzähler wird abgezogen → netto 800
+    r = client.get(f"/strom/{p['id']}/berechnung", params={"von": "2025-01-01", "bis": "2025-12-31"})
+    assert r.json()["netto_verbrauch"] == pytest.approx(800.0)
+
+    # deaktivieren → kein Abzug, Unterzähler wird nicht mehr geliefert
+    client.patch(f"/properties/{p['id']}", json={"strom_unterzaehler_aktiv": False})
+    r = client.get(f"/strom/{p['id']}/berechnung", params={"von": "2025-01-01", "bis": "2025-12-31"})
+    data = r.json()
+    assert data["netto_verbrauch"] == pytest.approx(1000.0)
+    assert data["unterzaehler"] is None
+
+
 def test_berechnung_preisaenderung_im_zeitraum(client):
     p = _objekt(client)
     client.post("/strom/readings", json={"property_id": p["id"], "role": "HAUPTZAEHLER", "reading_date": "2025-01-01", "value": "1000"})

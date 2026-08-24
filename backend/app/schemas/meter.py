@@ -41,14 +41,20 @@ class MeterReadingRead(BaseModel):
     meter_id: int
     reading_date: date
     value: Decimal
+    vor_zaehlerwechsel: bool = False
+    neuer_zaehler_start: Decimal = Decimal("0")
 
 
 class MeterReadingCreate(BaseModel):
     meter_id: int
     reading_date: date
     value: Decimal
+    vor_zaehlerwechsel: bool = False
+    neuer_zaehler_start: Decimal = Decimal("0")
 
 
 class MeterReadingUpdate(BaseModel):
     reading_date: Optional[date] = None
     value: Optional[Decimal] = None
+    vor_zaehlerwechsel: Optional[bool] = None
+    neuer_zaehler_start: Optional[Decimal] = None

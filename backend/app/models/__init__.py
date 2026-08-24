@@ -14,6 +14,7 @@ from .invoice import Invoice, InvoiceItem
 from .settlement import Settlement, SettlementLine
 from .strom import StromPrice, StromReading
 from .techem import TechemRecord
+from .wasser import WasserPrice, WasserReading
 
 __all__ = [
     "Base",
@@ -40,4 +41,6 @@ __all__ = [
     "StromPrice",
     "StromReading",
     "TechemRecord",
+    "WasserPrice",
+    "WasserReading",
 ]

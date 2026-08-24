@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from app.models.enums import AllocationKey, MeterType
 from app.services import engine as engine_mod
+from app.services import water as water_mod
 from tests import helpers
 
 
@@ -70,6 +71,32 @@ def _build_objekt1(session):
     return prop
 
 
+def test_zaehlerwechsel_consumption(session):
+    """Zählerwechsel: letzter Stand des alten Zählers (vor Zählerwechsel) + Startwert des neuen."""
+    prop = helpers.make_property(session, "Objekt")
+    u1 = helpers.make_unit(session, prop, "Wohnung 1", "50.0", "0.0")
+    meter = helpers.make_meter(session, "Wohnung 1 Wasser", MeterType.APARTMENT_WATER, unit=u1)
+
+    helpers.make_reading(session, meter, date(2015, 1, 1), "1206")
+    # Letzter Stand des alten Zählers + markierter Zählerwechsel, neuer Zähler startet bei 0
+    r = helpers.make_reading(session, meter, date(2015, 12, 31), "1240")
+    r.vor_zaehlerwechsel = True
+    r.neuer_zaehler_start = Decimal("0")
+    helpers.make_reading(session, meter, date(2016, 12, 31), "42")
+    helpers.make_reading(session, meter, date(2017, 12, 31), "80")
+    session.commit()
+
+    # 2016: Wechsel → neuer Zähler von 0 auf 42 = 42 (nicht negativ/fehlend)
+    mc = water_mod.meter_consumption(session, meter.id, date(2016, 1, 1), date(2016, 12, 31))
+    assert mc.consumption == Decimal("42.0")
+    assert not mc.missing
+
+    # 2017: normaler Verbrauch 80 - 42 = 38
+    mc17 = water_mod.meter_consumption(session, meter.id, date(2017, 1, 1), date(2017, 12, 31))
+    assert mc17.consumption == Decimal("38.0")
+    assert not mc17.missing
+
+
 def test_water_calculation(session):
     prop = _build_objekt1(session)
     result = engine_mod.compute_settlement(session, prop.id, 2026)
@@ -77,16 +104,16 @@ def test_water_calculation(session):
     assert result.total_wf == Decimal("206.0")
     assert result.total_nf == Decimal("218.0")
 
-    # Gartenverbrauch: Nord 40 + Süd 20 = 60
-    assert result.water.garden_consumption == Decimal("60.0")
+    # Gartenwasser wird nicht mehr berücksichtigt
+    assert result.water.garden_consumption == Decimal("0")
 
-    # Gesamtverbrauch: (50+6)+(45+10)+(40+5)+60 = 216
-    assert result.water.total_consumption == Decimal("216.0")
+    # Gesamtverbrauch: (50+6)+(45+10)+(40+5) = 156 (ohne Garten)
+    assert result.water.total_consumption == Decimal("156.0")
 
     # Wasser-Gesamtkosten: Trinkwasser 1000 * 181/365 + Schmutzwasser 500
     trink_pro_rata = Decimal("1000") * Decimal(181) / Decimal(365)
     water_total = trink_pro_rata + Decimal("500")
-    expected_price = water_total / Decimal("216")
+    expected_price = water_total / Decimal("156")
     assert result.water_price_per_m3 == expected_price
 
     mieter_a = next(ln for ln in result.tenant_lines if ln.name == "Mieter A")
@@ -98,10 +125,8 @@ def test_water_calculation(session):
     assert mieter_b.breakdown["WASSER_VERBRAUCH"] == Decimal("55") * expected_price
     assert mieter_c.breakdown["WASSER_VERBRAUCH"] == Decimal("45") * expected_price
 
-    # Gartenwasser wird nach Wohnfläche umgelegt
-    garden_cost = Decimal("60") * expected_price
-    assert mieter_a.breakdown["WASSER_GARTEN"] == garden_cost * (Decimal("76") / Decimal("206"))
-    assert mieter_b.breakdown["WASSER_GARTEN"] == garden_cost * (Decimal("65") / Decimal("206"))
+    # Keine Gartenwasser-Zeile mehr
+    assert "WASSER_GARTEN" not in mieter_a.breakdown
 
     # Grundsteuer (NF): Mieter A 80/218 von 2180
     assert mieter_a.breakdown["grundsteuer"] == Decimal("2180") * Decimal("80") / Decimal("218")
@@ -126,7 +151,7 @@ def test_water_individual_no_time_factor_for_partial_tenant(session):
     # Ohne Zählerstand zum Auszug (30.06.) fällt die Abrechnung auf den Jahresendstand zurück.
     trink_pro_rata = Decimal("1000") * Decimal(181) / Decimal(365)
     water_total = trink_pro_rata + Decimal("500")
-    expected_price = water_total / Decimal("216")
+    expected_price = water_total / Decimal("156")
     assert line.breakdown["WASSER_VERBRAUCH"] == Decimal("55") * expected_price
 
     # Hinweis auf fehlenden Zählerstand zu Ein-/Auszug wird ausgegeben.

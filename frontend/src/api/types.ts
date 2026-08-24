@@ -8,6 +8,12 @@ export interface Property {
   city: string;
   is_test?: boolean;
   strom_allocation_category_id?: number | null;
+  wasser_trinkwasser_category_id?: number | null;
+  wasser_schmutzwasser_category_id?: number | null;
+  wasser_niederschlag_category_id?: number | null;
+  wasser_versiegelte_flaeche?: Money | null;
+  strom_unterzaehler_aktiv?: boolean;
+  wasser_waschmaschinen_aktiv?: boolean;
   created_at?: string;
 }
 
@@ -110,6 +116,8 @@ export interface MeterReading {
   meter_id: number;
   reading_date: string;
   value: Money;
+  vor_zaehlerwechsel?: boolean;
+  neuer_zaehler_start?: Money;
 }
 
 export interface TechemSheet {
@@ -126,6 +134,51 @@ export interface TechemSheet {
   maintenance_cost: Money;
   chimney_cost: Money;
   notes?: string | null;
+}
+
+export interface WasserPrice {
+  id: number;
+  property_id: number;
+  kind: string;
+  valid_from: string;
+  valid_to: string;
+  amount: Money;
+  vat_rate: Money;
+}
+
+export interface WasserReading {
+  id: number;
+  property_id: number;
+  reading_date: string;
+  value: Money;
+  vor_zaehlerwechsel?: boolean;
+  neuer_zaehler_start?: Money;
+}
+
+export interface WasserPosition {
+  art: string;
+  von: string;
+  bis: string;
+  einheit?: string;
+  satz_einheit?: string;
+  menge: number;
+  satz: number;
+  vat_rate: number;
+  netto: number;
+  vat: number;
+  brutto: number;
+}
+
+export interface WasserBerechnung {
+  property_id: number;
+  von: string;
+  bis: string;
+  plan?: "A" | "B";
+  hauptzaehler: { start_reading: number; end_reading: number; consumption: number } | null;
+  verbrauch: number;
+  versiegelte_flaeche?: number | null;
+  positionen: WasserPosition[];
+  summen: { netto: number; vat: number; brutto: number };
 }
 
 export interface CategoryLine {
@@ -256,6 +309,8 @@ export interface StromReading {
   role: string; // HAUPTZAEHLER | UNTERZAEHLER
   reading_date: string;
   value: number;
+  vor_zaehlerwechsel?: boolean;
+  neuer_zaehler_start?: Money;
 }
 
 export interface StromMeterResult {

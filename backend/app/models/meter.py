@@ -56,6 +56,11 @@ class MeterReading(Base):
     )
     reading_date: Mapped[date] = mapped_column(Date, nullable=False)
     value: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    # Zählerwechsel: dieser Stand ist der letzte des alten Zählers; der neue beginnt bei neuer_zaehler_start
+    vor_zaehlerwechsel: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, default=False)
+    neuer_zaehler_start: Mapped[Decimal] = mapped_column(
+        Numeric(14, 4), nullable=False, default=Decimal("0")
+    )
 
     __table_args__ = (
         sa.UniqueConstraint("meter_id", "reading_date", name="uq_meter_reading"),

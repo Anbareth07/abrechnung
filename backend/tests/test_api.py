@@ -117,10 +117,10 @@ def test_full_flow(client):
     assert line["name"] == "Mieter A"
     assert line["tenant_days"] == 365
 
-    # cbm-Preis: (1000*181/365 + 500) / (Garten 30 + Wohnung 50) = ... / 80
-    expected_price = (1000 * 181 / 365 + 500) / 80
+    # cbm-Preis: (1000*181/365 + 500) / Wohnung 50 (Garten wird ignoriert)
+    expected_price = (1000 * 181 / 365 + 500) / 50
     assert abs(float(result["water_price_per_m3"]) - expected_price) < 1e-9
-    assert float(result["water"]["garden_consumption"]) == 30.0
+    assert float(result["water"]["garden_consumption"]) == 0.0
 
     # Finalisieren
     final = client.post(f"/settlements/{pid}/2026/finalize").json()

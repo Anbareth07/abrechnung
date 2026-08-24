@@ -45,6 +45,18 @@ def check_completeness(session: Session, property_id: int, year: int) -> list[Mi
     # Kostenart, die als Strom-Ziel verknüpft ist (wird über das Strom-Modul abgedeckt)
     prop = session.get(models.Property, property_id)
     strom_cat_id = prop.strom_allocation_category_id if prop else None
+    # Kostenstellen, die über das Wasser-Modul abgedeckt sind (Trink/Schmutz/Niederschlag)
+    wasser_cat_ids: set[int] = set()
+    if prop is not None:
+        wasser_cat_ids = {
+            c
+            for c in (
+                prop.wasser_trinkwasser_category_id,
+                prop.wasser_schmutzwasser_category_id,
+                prop.wasser_niederschlag_category_id,
+            )
+            if c
+        }
 
     invoices = session.execute(
         select(models.Invoice).where(models.Invoice.property_id == property_id)
@@ -67,7 +79,11 @@ def check_completeness(session: Session, property_id: int, year: int) -> list[Mi
         if cfg.allocation_key == models.AllocationKey.NONE:
             continue
         cat = cfg.cost_category
-        if (property_id, cat.id) in no_invoice or cat.id == strom_cat_id:
+        if (
+            (property_id, cat.id) in no_invoice
+            or cat.id == strom_cat_id
+            or cat.id in wasser_cat_ids
+        ):
             continue
         has_overlap = cat.id in recurring_cats or any(
             prorata.overlap_days(item.from_date, item.to_date, ys, ye) > 0

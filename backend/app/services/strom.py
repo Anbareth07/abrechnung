@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import models
-from .prorata import ZERO, days_in_year
+from .prorata import ZERO, days_in_year, zaehlerwechsel_consumption
 
 STROM_KINDS = ("GRUNDGEBUEHR", "ARBEITSPREIS", "STROMSTEUER")
 
@@ -54,11 +54,13 @@ def _meter_consumption(
         )
         .order_by(models.StromReading.reading_date)
     ).scalars().all()
-    start = _interpolate(readings, von)
-    end = _interpolate(readings, bis)
-    if start is None or end is None:
+    if not readings:
         return None
-    consumption = max(end - start, ZERO)
+    # Zählerwechsel-sichere Berechnung (Wert-vor-Wechsel + Startwert des neuen Zählers);
+    # interpolierte Randwerte mit Clamping (Zeitraum kann über die letzte Ablesung hinausgehen)
+    consumption, start, end = zaehlerwechsel_consumption(readings, von, bis, clamp=True)
+    if consumption is None:
+        return None
     return {
         "start_reading": float(start),
         "end_reading": float(end),
@@ -87,8 +89,11 @@ def berechnung(session: Session, property_id: int, von: date, bis: date) -> dict
     if von > bis:
         raise ValueError("Zeitraum ungültig: von darf nicht nach bis liegen")
 
+    prop = session.get(models.Property, property_id)
+    unter_aktiv = bool(prop.strom_unterzaehler_aktiv) if prop is not None else True
+
     haupt = _meter_consumption(session, property_id, "HAUPTZAEHLER", von, bis)
-    unter = _meter_consumption(session, property_id, "UNTERZAEHLER", von, bis)
+    unter = _meter_consumption(session, property_id, "UNTERZAEHLER", von, bis) if unter_aktiv else None
     haupt_consumption = Decimal(haupt["consumption"]) if haupt else ZERO
     unter_consumption = Decimal(unter["consumption"]) if unter else ZERO
     netto_verbrauch = max(haupt_consumption - unter_consumption, ZERO)

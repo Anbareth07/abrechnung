@@ -2,19 +2,20 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
-class StromPriceCreate(BaseModel):
+class WasserPriceCreate(BaseModel):
     property_id: int
-    kind: str  # GRUNDGEBUEHR | ARBEITSPREIS | STROMSTEUER
+    kind: str  # TRINKWASSER | SCHMUTZWASSER | NIEDERSCHLAGSWASSER | GRUNDGEBUEHR
     valid_from: date
     valid_to: date
     amount: Decimal
-    vat_rate: Decimal = Decimal("19.00")
+    # None → artabhängiger Standard (Trinkwasser/Grundgebühr 7 %, Schmutz/Niederschlag 0 %)
+    vat_rate: Optional[Decimal] = None
 
 
-class StromPriceUpdate(BaseModel):
+class WasserPriceUpdate(BaseModel):
     kind: Optional[str] = None
     valid_from: Optional[date] = None
     valid_to: Optional[date] = None
@@ -22,7 +23,7 @@ class StromPriceUpdate(BaseModel):
     vat_rate: Optional[Decimal] = None
 
 
-class StromPriceRead(BaseModel):
+class WasserPriceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -34,29 +35,26 @@ class StromPriceRead(BaseModel):
     vat_rate: Decimal
 
 
-class StromReadingCreate(BaseModel):
+class WasserReadingCreate(BaseModel):
     property_id: int
-    role: str  # HAUPTZAEHLER | UNTERZAEHLER
     reading_date: date
     value: Decimal
     vor_zaehlerwechsel: bool = False
     neuer_zaehler_start: Decimal = Decimal("0")
 
 
-class StromReadingUpdate(BaseModel):
-    role: Optional[str] = None
+class WasserReadingUpdate(BaseModel):
     reading_date: Optional[date] = None
     value: Optional[Decimal] = None
     vor_zaehlerwechsel: Optional[bool] = None
     neuer_zaehler_start: Optional[Decimal] = None
 
 
-class StromReadingRead(BaseModel):
+class WasserReadingRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     property_id: int
-    role: str
     reading_date: date
     value: Decimal
     vor_zaehlerwechsel: bool = False
