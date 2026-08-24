@@ -251,56 +251,58 @@ export default function TechemPage() {
       )}
 
       <Title order={4}>Gespeicherte Zeiträume</Title>
-      <Table striped highlightOnHover>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Zeitraum</Table.Th>
-            <Table.Th>Heizstrom (kWh)</Table.Th>
-            <Table.Th>Heizstrom (€)</Table.Th>
-            <Table.Th>Gas (kWh)</Table.Th>
-            <Table.Th>Gas (€)</Table.Th>
-            <Table.Th>Wartung (€)</Table.Th>
-            <Table.Th>Kaminfeger (€)</Table.Th>
-            <Table.Th>Notizen</Table.Th>
-            <Table.Th></Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {(sheets.data ?? []).map((s) => (
-            <Table.Tr key={`${s.von}-${s.bis}`}>
-              <Table.Td>
-                {s.von} – {s.bis}
-              </Table.Td>
-              <Table.Td>{fmt(Number(s.strom_kwh), 0)}</Table.Td>
-              <Table.Td>{fmt(Number(s.strom_brutto), 2)} €</Table.Td>
-              <Table.Td>{fmt(Number(s.gas_kwh), 0)}</Table.Td>
-              <Table.Td>{fmt(Number(s.gas_cost), 2)} €</Table.Td>
-              <Table.Td>{fmt(Number(s.maintenance_cost), 2)} €</Table.Td>
-              <Table.Td>{fmt(Number(s.chimney_cost), 2)} €</Table.Td>
-              <Table.Td>{s.notes ?? "—"}</Table.Td>
-              <Table.Td>
-                <Group gap="xs" justify="flex-end">
-                  <Button size="compact-xs" variant="light" onClick={() => loadSheet(s)}>
-                    Laden
-                  </Button>
-                  <Button size="compact-xs" variant="light" color="red" onClick={() => setDel(s)}>
-                    Löschen
-                  </Button>
-                </Group>
-              </Table.Td>
-            </Table.Tr>
-          ))}
-          {(sheets.data ?? []).length === 0 && (
+      <Table.ScrollContainer minWidth={700}>
+        <Table striped highlightOnHover>
+          <Table.Thead>
             <Table.Tr>
-              <Table.Td colSpan={9}>
-                <Text size="sm" c="dimmed">
-                  Noch keine Zeiträume gespeichert.
-                </Text>
-              </Table.Td>
+              <Table.Th>Zeitraum</Table.Th>
+              <Table.Th>Heizstrom (kWh)</Table.Th>
+              <Table.Th>Heizstrom (€)</Table.Th>
+              <Table.Th>Gas (kWh)</Table.Th>
+              <Table.Th>Gas (€)</Table.Th>
+              <Table.Th>Wartung (€)</Table.Th>
+              <Table.Th>Kaminfeger (€)</Table.Th>
+              <Table.Th>Notizen</Table.Th>
+              <Table.Th></Table.Th>
             </Table.Tr>
-          )}
-        </Table.Tbody>
-      </Table>
+          </Table.Thead>
+          <Table.Tbody>
+            {(sheets.data ?? []).map((s) => (
+              <Table.Tr key={`${s.von}-${s.bis}`}>
+                <Table.Td>
+                  {s.von} – {s.bis}
+                </Table.Td>
+                <Table.Td>{fmt(Number(s.strom_kwh), 0)}</Table.Td>
+                <Table.Td>{fmt(Number(s.strom_brutto), 2)} €</Table.Td>
+                <Table.Td>{fmt(Number(s.gas_kwh), 0)}</Table.Td>
+                <Table.Td>{fmt(Number(s.gas_cost), 2)} €</Table.Td>
+                <Table.Td>{fmt(Number(s.maintenance_cost), 2)} €</Table.Td>
+                <Table.Td>{fmt(Number(s.chimney_cost), 2)} €</Table.Td>
+                <Table.Td>{s.notes ?? "—"}</Table.Td>
+                <Table.Td>
+                  <Group gap="xs" justify="flex-end">
+                    <Button size="compact-xs" variant="light" onClick={() => loadSheet(s)}>
+                      Laden
+                    </Button>
+                    <Button size="compact-xs" variant="light" color="red" onClick={() => setDel(s)}>
+                      Löschen
+                    </Button>
+                  </Group>
+                </Table.Td>
+              </Table.Tr>
+            ))}
+            {(sheets.data ?? []).length === 0 && (
+              <Table.Tr>
+                <Table.Td colSpan={9}>
+                  <Text size="sm" c="dimmed">
+                    Noch keine Zeiträume gespeichert.
+                  </Text>
+                </Table.Td>
+              </Table.Tr>
+            )}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
 
       <ConfirmDeleteModal
         opened={!!del}
