@@ -117,6 +117,18 @@ def test_berechnung_preisaenderung_im_zeitraum(client):
     assert sum(x["netto"] for x in ap) == pytest.approx(ap1 + ap2, abs=1e-6)
 
 
+def test_techem_sheet_rundet_heizstrom(client):
+    """Heizstrom wird auf ganze kWh gerundet (100,55 → 101)."""
+    p = _objekt(client)
+    client.post("/strom/readings", json={"property_id": p["id"], "role": "UNTERZAEHLER", "reading_date": "2025-01-01", "value": "100"})
+    client.post("/strom/readings", json={"property_id": p["id"], "role": "UNTERZAEHLER", "reading_date": "2025-12-31", "value": "300"})
+
+    # Heizperiode 01.07.2025–30.06.2026 → interpoliert 100,55 kWh → 101
+    s = client.get("/techem/sheet", params={"property_id": p["id"], "von": "2025-07-01", "bis": "2026-06-30"})
+    assert s.status_code == 200
+    assert float(s.json()["strom_kwh"]) == pytest.approx(101.0)
+
+
 def test_techem_sheet(client):
     """Heizkosten-Blatt: Stromanteil + -kosten automatisch, Werte speicherbar."""
     p = _objekt(client)

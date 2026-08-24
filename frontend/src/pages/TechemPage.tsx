@@ -173,7 +173,7 @@ export default function TechemPage() {
                 <Table.Td fw={700}>kWh</Table.Td>
                 <Table.Td>
                   <Text size="xl" fw={700}>
-                    {sheet.data ? `${fmt(Number(sheet.data.strom_kwh), 2)}` : "—"}
+                    {sheet.data ? `${fmt(Number(sheet.data.strom_kwh), 0)}` : "—"}
                   </Text>
                   <Text size="xs" c="dimmed">
                     automatisch aus dem Unterzähler
@@ -266,7 +266,7 @@ export default function TechemPage() {
               <Table.Td>
                 {s.von} – {s.bis}
               </Table.Td>
-              <Table.Td>{fmt(Number(s.strom_kwh), 2)}</Table.Td>
+              <Table.Td>{fmt(Number(s.strom_kwh), 0)}</Table.Td>
               <Table.Td>{fmt(Number(s.strom_brutto), 2)} €</Table.Td>
               <Table.Td>{fmt(Number(s.gas_kwh), 0)}</Table.Td>
               <Table.Td>{fmt(Number(s.gas_cost), 2)} €</Table.Td>

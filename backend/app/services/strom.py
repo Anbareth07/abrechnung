@@ -11,7 +11,7 @@ Arbeitspreis/Stromsteuer verbrauchsanteilig.
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -162,19 +162,21 @@ def unterzaehler_verbrauch(session: Session, property_id: int, von: date, bis: d
     unter = res.get("unterzaehler")
     if unter is None:
         return ZERO
-    return Decimal(str(unter["consumption"]))
+    # Heizstrom immer auf ganze kWh gerundet
+    return Decimal(str(unter["consumption"])).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
 
 
 def unterzaehler_kosten(session: Session, property_id: int, von: date, bis: date) -> dict:
     """Kosten des Unterzähler-Verbrauchs (Heizstrom) im Zeitraum.
 
-    Arbeitspreis und Stromsteuer werden tageanteilig auf den Unterzähler-
-    Verbrauch angewendet; die Grundgebühr bleibt beim allgemeinen Strom.
+    Arbeitspreis und Stromsteuer werden tageanteilig auf den (auf ganze kWh
+    gerundeten) Unterzähler-Verbrauch angewendet; die Grundgebühr bleibt beim
+    allgemeinen Strom.
     """
     unter = _meter_consumption(session, property_id, "UNTERZAEHLER", von, bis)
     if unter is None:
         return {"kwh": 0.0, "netto": 0.0, "vat": 0.0, "brutto": 0.0}
-    kwh = Decimal(str(unter["consumption"]))
+    kwh = Decimal(str(unter["consumption"])).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     total_days = (bis - von).days + 1
     netto = vat = ZERO
     for kind in ("ARBEITSPREIS", "STROMSTEUER"):
