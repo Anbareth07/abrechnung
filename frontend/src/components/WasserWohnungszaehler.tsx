@@ -7,6 +7,7 @@ import {
   Group,
   Modal,
   NumberInput,
+  SegmentedControl,
   Stack,
   Table,
   Text,
@@ -16,6 +17,7 @@ import { notifications } from "@mantine/notifications";
 import { useCrud } from "../hooks/useCrud";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 import ZaehlerwechselFields from "./ZaehlerwechselFields";
+import ReadingSource, { READING_SOURCE_OPTIONS } from "./ReadingSource";
 import type { LeaseUnit, Meter, MeterReading } from "../api/types";
 
 const ok = (msg: string) => notifications.show({ message: msg, color: "green" });
@@ -62,6 +64,7 @@ export default function WasserWohnungszaehler({
     value: "",
     vor_zaehlerwechsel: false,
     neuer_zaehler_start: "",
+    source: "RECHNUNG",
   });
   const [readDel, setReadDel] = useState<MeterReading | null>(null);
 
@@ -78,6 +81,7 @@ export default function WasserWohnungszaehler({
       value: last ? String(Number(last.value)) : "",
       vor_zaehlerwechsel: false,
       neuer_zaehler_start: "",
+      source: "RECHNUNG",
     });
     setReadOpen(true);
   };
@@ -89,6 +93,7 @@ export default function WasserWohnungszaehler({
       value: String(Number(r.value)),
       vor_zaehlerwechsel: Boolean(r.vor_zaehlerwechsel),
       neuer_zaehler_start: r.neuer_zaehler_start != null ? String(Number(r.neuer_zaehler_start)) : "",
+      source: r.source ?? "RECHNUNG",
     });
     setReadOpen(true);
   };
@@ -101,6 +106,7 @@ export default function WasserWohnungszaehler({
       neuer_zaehler_start: readForm.vor_zaehlerwechsel
         ? Number(readForm.neuer_zaehler_start === "" ? "0" : readForm.neuer_zaehler_start)
         : 0,
+      source: readForm.source,
     };
     const done = () => {
       setReadOpen(false);
@@ -177,13 +183,14 @@ export default function WasserWohnungszaehler({
                             <Table.Tr>
                               <Table.Th>Datum</Table.Th>
                               <Table.Th>Wert (m³)</Table.Th>
+                              <Table.Th>Quelle</Table.Th>
                               <Table.Th></Table.Th>
                             </Table.Tr>
                           </Table.Thead>
                           <Table.Tbody>
                             {meter && meterReadings.length === 0 && (
                               <Table.Tr>
-                                <Table.Td colSpan={3}>
+                                <Table.Td colSpan={4}>
                                   <Text size="xs" c="dimmed">
                                     Keine Stände
                                   </Text>
@@ -205,6 +212,9 @@ export default function WasserWohnungszaehler({
                                     ) : (
                                       fmt(Number(r.value), 0)
                                     )}
+                                  </Table.Td>
+                                  <Table.Td>
+                                    <ReadingSource source={r.source} />
                                   </Table.Td>
                                   <Table.Td>
                                     <Group gap="xs" justify="flex-end">
@@ -255,6 +265,17 @@ export default function WasserWohnungszaehler({
             decimalScale={4}
             min={0}
           />
+          <Stack gap={4}>
+            <Text size="sm" fw={500}>
+              Herkunft
+            </Text>
+            <SegmentedControl
+              data={READING_SOURCE_OPTIONS}
+              value={readForm.source}
+              onChange={(v) => setReadForm({ ...readForm, source: v })}
+              fullWidth
+            />
+          </Stack>
           <ZaehlerwechselFields
             vor={readForm.vor_zaehlerwechsel}
             start={readForm.neuer_zaehler_start}

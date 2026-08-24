@@ -43,6 +43,8 @@ class MeterReadingRead(BaseModel):
     value: Decimal
     vor_zaehlerwechsel: bool = False
     neuer_zaehler_start: Decimal = Decimal("0")
+    # RECHNUNG (vom Versorger übermittelt) | ABLESUNG (selbst abgelesen)
+    source: str = "RECHNUNG"
 
 
 class MeterReadingCreate(BaseModel):
@@ -51,6 +53,7 @@ class MeterReadingCreate(BaseModel):
     value: Decimal
     vor_zaehlerwechsel: bool = False
     neuer_zaehler_start: Decimal = Decimal("0")
+    source: str = "RECHNUNG"
 
 
 class MeterReadingUpdate(BaseModel):
@@ -58,3 +61,4 @@ class MeterReadingUpdate(BaseModel):
     value: Optional[Decimal] = None
     vor_zaehlerwechsel: Optional[bool] = None
     neuer_zaehler_start: Optional[Decimal] = None
+    source: Optional[str] = None

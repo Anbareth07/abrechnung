@@ -120,6 +120,7 @@ export interface MeterReading {
   value: Money;
   vor_zaehlerwechsel?: boolean;
   neuer_zaehler_start?: Money;
+  source?: string; // RECHNUNG | ABLESUNG
 }
 
 export interface TechemSheet {
@@ -155,6 +156,7 @@ export interface WasserReading {
   value: Money;
   vor_zaehlerwechsel?: boolean;
   neuer_zaehler_start?: Money;
+  source?: string; // RECHNUNG | ABLESUNG
 }
 
 export interface WasserPosition {
@@ -324,6 +326,7 @@ export interface StromReading {
   value: number;
   vor_zaehlerwechsel?: boolean;
   neuer_zaehler_start?: Money;
+  source?: string; // RECHNUNG | ABLESUNG
 }
 
 export interface StromMeterResult {

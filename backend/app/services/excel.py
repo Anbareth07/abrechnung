@@ -34,6 +34,12 @@ _ALLOC_LABELS = {
     "NONE": "—",
 }
 
+# Herkunft eines Zählerstands → Anzeige-Label
+_SOURCE_LABELS = {
+    "RECHNUNG": "Rechnung",
+    "ABLESUNG": "Ablesung",
+}
+
 _TITLE_FONT = Font(bold=True, size=14)
 _HEADER_FONT = Font(bold=True)
 _HEADER_FILL = PatternFill("solid", fgColor="DEE2E6")
@@ -258,6 +264,7 @@ def _add_strom_sheet(wb, session, property_id, year, ys, ye):
             x.role,
             _fmt_date(x.reading_date),
             _num(x.value),
+            _SOURCE_LABELS.get(x.source, x.source or "Rechnung"),
             "ja" if x.vor_zaehlerwechsel else "",
             _num(x.neuer_zaehler_start) if x.vor_zaehlerwechsel else "",
         )
@@ -265,8 +272,8 @@ def _add_strom_sheet(wb, session, property_id, year, ys, ye):
         if start_bound <= x.reading_date <= ye
     ]
     r = _write_table(
-        ws, r, ["Rolle", "Datum", "Stand (kWh)", "Zählerwechsel", "Neustart"],
-        read_rows, widths=[18, 12, 14, 14, 12], money_cols=(5,),
+        ws, r, ["Rolle", "Datum", "Stand (kWh)", "Quelle", "Zählerwechsel", "Neustart"],
+        read_rows, widths=[18, 12, 14, 12, 14, 12], money_cols=(6,),
     ) + 1
 
     try:
@@ -335,6 +342,7 @@ def _add_wasser_sheet(wb, session, property_id, year, ys, ye):
         (
             _fmt_date(x.reading_date),
             _num(x.value),
+            _SOURCE_LABELS.get(x.source, x.source or "Rechnung"),
             "ja" if x.vor_zaehlerwechsel else "",
             _num(x.neuer_zaehler_start) if x.vor_zaehlerwechsel else "",
         )
@@ -342,8 +350,8 @@ def _add_wasser_sheet(wb, session, property_id, year, ys, ye):
         if start_bound <= x.reading_date <= ye
     ]
     r = _write_table(
-        ws, r, ["Datum", "Stand (m³)", "Zählerwechsel", "Neustart"],
-        read_rows, widths=[12, 14, 14, 12], money_cols=(4,),
+        ws, r, ["Datum", "Stand (m³)", "Quelle", "Zählerwechsel", "Neustart"],
+        read_rows, widths=[12, 14, 12, 14, 12], money_cols=(5,),
     ) + 1
 
     units = session.scalars(
@@ -369,14 +377,15 @@ def _add_wasser_sheet(wb, session, property_id, year, ys, ye):
                             m.meter_type.value,
                             _fmt_date(rd.reading_date),
                             _num(rd.value),
+                            _SOURCE_LABELS.get(rd.source, rd.source or "Rechnung"),
                             "ja" if rd.vor_zaehlerwechsel else "",
                             _num(rd.neuer_zaehler_start) if rd.vor_zaehlerwechsel else "",
                         )
                     )
         r = _write_table(
             ws, r,
-            ["Zähler", "Wohnung", "Art", "Datum", "Stand (m³)", "Zählerwechsel", "Neustart"],
-            meter_rows, widths=[24, 20, 18, 12, 12, 14, 12], money_cols=(7,),
+            ["Zähler", "Wohnung", "Art", "Datum", "Stand (m³)", "Quelle", "Zählerwechsel", "Neustart"],
+            meter_rows, widths=[24, 20, 18, 12, 12, 12, 14, 12], money_cols=(8,),
         ) + 1
 
     try:

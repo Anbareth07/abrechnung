@@ -8,6 +8,7 @@ import {
   Group,
   Modal,
   NumberInput,
+  SegmentedControl,
   Select,
   Stack,
   Table,
@@ -19,6 +20,7 @@ import { notifications } from "@mantine/notifications";
 import { api } from "../api/client";
 import { ConfirmDeleteModal } from "../components/ConfirmDeleteModal";
 import ZaehlerwechselFields from "../components/ZaehlerwechselFields";
+import ReadingSource, { READING_SOURCE_OPTIONS } from "../components/ReadingSource";
 import PageHelp from "../components/PageHelp";
 import { stromHelp } from "../help/helpContent";
 import { useTestData } from "../context/TestDataContext";
@@ -94,6 +96,7 @@ export default function StromPage() {
     value: "",
     vor_zaehlerwechsel: false,
     neuer_zaehler_start: "",
+    source: "RECHNUNG",
   });
   const [readDel, setReadDel] = useState<StromReading | null>(null);
 
@@ -225,6 +228,7 @@ export default function StromPage() {
       value: last ? String(Number(last.value)) : "",
       vor_zaehlerwechsel: false,
       neuer_zaehler_start: "",
+      source: "RECHNUNG",
     });
     setReadOpen(true);
   };
@@ -236,6 +240,7 @@ export default function StromPage() {
       value: String(Number(r.value)),
       vor_zaehlerwechsel: Boolean(r.vor_zaehlerwechsel),
       neuer_zaehler_start: r.neuer_zaehler_start != null ? String(Number(r.neuer_zaehler_start)) : "",
+      source: r.source ?? "RECHNUNG",
     });
     setReadOpen(true);
   };
@@ -250,6 +255,7 @@ export default function StromPage() {
       neuer_zaehler_start: readForm.vor_zaehlerwechsel
         ? Number(readForm.neuer_zaehler_start === "" ? "0" : readForm.neuer_zaehler_start)
         : 0,
+      source: readForm.source,
     };
     const done = () => {
       setReadOpen(false);
@@ -399,13 +405,14 @@ export default function StromPage() {
                   <Table.Tr>
                     <Table.Th>Datum</Table.Th>
                     <Table.Th>Wert (kWh)</Table.Th>
+                    <Table.Th>Quelle</Table.Th>
                     <Table.Th></Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
                   {haupt.length === 0 && (
                     <Table.Tr>
-                      <Table.Td colSpan={3}>
+                      <Table.Td colSpan={4}>
                         <Text size="sm" c="dimmed">
                           Keine Stände
                         </Text>
@@ -417,6 +424,9 @@ export default function StromPage() {
                       <Table.Td>{r.reading_date}</Table.Td>
                       <Table.Td>
                         <ReadingWert r={r} />
+                      </Table.Td>
+                      <Table.Td>
+                        <ReadingSource source={r.source} />
                       </Table.Td>
                       <Table.Td>
                         <Group gap="xs" justify="flex-end">
@@ -446,13 +456,14 @@ export default function StromPage() {
                   <Table.Tr>
                     <Table.Th>Datum</Table.Th>
                     <Table.Th>Wert (kWh)</Table.Th>
+                    <Table.Th>Quelle</Table.Th>
                     <Table.Th></Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
                   {unter.length === 0 && (
                     <Table.Tr>
-                      <Table.Td colSpan={3}>
+                      <Table.Td colSpan={4}>
                         <Text size="sm" c="dimmed">
                           Keine Stände
                         </Text>
@@ -464,6 +475,9 @@ export default function StromPage() {
                       <Table.Td>{r.reading_date}</Table.Td>
                       <Table.Td>
                         <ReadingWert r={r} />
+                      </Table.Td>
+                      <Table.Td>
+                        <ReadingSource source={r.source} />
                       </Table.Td>
                       <Table.Td>
                         <Group gap="xs" justify="flex-end">
@@ -564,6 +578,17 @@ export default function StromPage() {
             step={1}
             min={0}
           />
+          <Stack gap={4}>
+            <Text size="sm" fw={500}>
+              Herkunft
+            </Text>
+            <SegmentedControl
+              data={READING_SOURCE_OPTIONS}
+              value={readForm.source}
+              onChange={(v) => setReadForm({ ...readForm, source: v })}
+              fullWidth
+            />
+          </Stack>
           <ZaehlerwechselFields
             vor={readForm.vor_zaehlerwechsel}
             start={readForm.neuer_zaehler_start}

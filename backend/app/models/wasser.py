@@ -53,5 +53,7 @@ class WasserReading(Base):
     neuer_zaehler_start: Mapped[Decimal] = mapped_column(
         Numeric(14, 4), nullable=False, default=Decimal("0")
     )
+    # Herkunft des Standes: "RECHNUNG" (vom Versorger übermittelt, Standard) | "ABLESUNG" (selbst abgelesen)
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="RECHNUNG")
 
     prop: Mapped["Property"] = relationship(back_populates="wasser_readings")

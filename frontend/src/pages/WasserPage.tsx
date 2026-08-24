@@ -8,6 +8,7 @@ import {
   Group,
   Modal,
   NumberInput,
+  SegmentedControl,
   Select,
   Stack,
   Table,
@@ -20,6 +21,7 @@ import { api } from "../api/client";
 import { ConfirmDeleteModal } from "../components/ConfirmDeleteModal";
 import WasserWohnungszaehler from "../components/WasserWohnungszaehler";
 import ZaehlerwechselFields from "../components/ZaehlerwechselFields";
+import ReadingSource, { READING_SOURCE_OPTIONS } from "../components/ReadingSource";
 import PageHelp from "../components/PageHelp";
 import { wasserHelp } from "../help/helpContent";
 import { useTestData } from "../context/TestDataContext";
@@ -91,6 +93,7 @@ export default function WasserPage() {
     value: "",
     vor_zaehlerwechsel: false,
     neuer_zaehler_start: "",
+    source: "RECHNUNG",
   });
   const [readDel, setReadDel] = useState<WasserReading | null>(null);
 
@@ -241,6 +244,7 @@ export default function WasserPage() {
       value: last ? String(Number(last.value)) : "",
       vor_zaehlerwechsel: false,
       neuer_zaehler_start: "",
+      source: "RECHNUNG",
     });
     setReadOpen(true);
   };
@@ -251,6 +255,7 @@ export default function WasserPage() {
       value: String(Number(r.value)),
       vor_zaehlerwechsel: Boolean(r.vor_zaehlerwechsel),
       neuer_zaehler_start: r.neuer_zaehler_start != null ? String(Number(r.neuer_zaehler_start)) : "",
+      source: r.source ?? "RECHNUNG",
     });
     setReadOpen(true);
   };
@@ -264,6 +269,7 @@ export default function WasserPage() {
       neuer_zaehler_start: readForm.vor_zaehlerwechsel
         ? Number(readForm.neuer_zaehler_start === "" ? "0" : readForm.neuer_zaehler_start)
         : 0,
+      source: readForm.source,
     };
     const done = () => {
       setReadOpen(false);
@@ -428,13 +434,14 @@ export default function WasserPage() {
                     <Table.Tr>
                       <Table.Th>Datum</Table.Th>
                       <Table.Th>Wert (m³)</Table.Th>
+                      <Table.Th>Quelle</Table.Th>
                       <Table.Th></Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
                     {propReadings.length === 0 && (
                       <Table.Tr>
-                        <Table.Td colSpan={3}>
+                        <Table.Td colSpan={4}>
                           <Text size="sm" c="dimmed">
                             Keine Stände
                           </Text>
@@ -447,6 +454,9 @@ export default function WasserPage() {
                         <Table.Tr key={r.id}>
                           <Table.Td>{r.reading_date}</Table.Td>
                           <Table.Td>{fmt(Number(r.value), 0)}</Table.Td>
+                          <Table.Td>
+                            <ReadingSource source={r.source} />
+                          </Table.Td>
                           <Table.Td>
                             <Group gap="xs" justify="flex-end">
                               <Button size="compact-xs" variant="light" onClick={() => openReadEdit(r)}>
@@ -560,6 +570,17 @@ export default function WasserPage() {
             decimalScale={0}
             min={0}
           />
+          <Stack gap={4}>
+            <Text size="sm" fw={500}>
+              Herkunft
+            </Text>
+            <SegmentedControl
+              data={READING_SOURCE_OPTIONS}
+              value={readForm.source}
+              onChange={(v) => setReadForm({ ...readForm, source: v })}
+              fullWidth
+            />
+          </Stack>
           <ZaehlerwechselFields
             vor={readForm.vor_zaehlerwechsel}
             start={readForm.neuer_zaehler_start}

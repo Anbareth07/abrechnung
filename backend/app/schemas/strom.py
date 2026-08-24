@@ -41,6 +41,8 @@ class StromReadingCreate(BaseModel):
     value: Decimal
     vor_zaehlerwechsel: bool = False
     neuer_zaehler_start: Decimal = Decimal("0")
+    # RECHNUNG (vom Versorger übermittelt) | ABLESUNG (selbst abgelesen)
+    source: str = "RECHNUNG"
 
 
 class StromReadingUpdate(BaseModel):
@@ -49,6 +51,7 @@ class StromReadingUpdate(BaseModel):
     value: Optional[Decimal] = None
     vor_zaehlerwechsel: Optional[bool] = None
     neuer_zaehler_start: Optional[Decimal] = None
+    source: Optional[str] = None
 
 
 class StromReadingRead(BaseModel):
@@ -61,3 +64,4 @@ class StromReadingRead(BaseModel):
     value: Decimal
     vor_zaehlerwechsel: bool = False
     neuer_zaehler_start: Decimal = Decimal("0")
+    source: str = "RECHNUNG"

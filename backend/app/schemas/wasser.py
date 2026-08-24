@@ -41,6 +41,8 @@ class WasserReadingCreate(BaseModel):
     value: Decimal
     vor_zaehlerwechsel: bool = False
     neuer_zaehler_start: Decimal = Decimal("0")
+    # RECHNUNG (vom Versorger übermittelt) | ABLESUNG (selbst abgelesen)
+    source: str = "RECHNUNG"
 
 
 class WasserReadingUpdate(BaseModel):
@@ -48,6 +50,7 @@ class WasserReadingUpdate(BaseModel):
     value: Optional[Decimal] = None
     vor_zaehlerwechsel: Optional[bool] = None
     neuer_zaehler_start: Optional[Decimal] = None
+    source: Optional[str] = None
 
 
 class WasserReadingRead(BaseModel):
@@ -59,3 +62,4 @@ class WasserReadingRead(BaseModel):
     value: Decimal
     vor_zaehlerwechsel: bool = False
     neuer_zaehler_start: Decimal = Decimal("0")
+    source: str = "RECHNUNG"
