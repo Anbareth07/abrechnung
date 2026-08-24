@@ -1,20 +1,42 @@
+# Docker-Compose für die Nebenkostenabrechnung auf einem Raspberry Pi
+# (32-bit ARMv7 / Raspbian Bullseye) – Datenbank: SQLite (kein DB-Container)
+#
+# Verwendung:
+#   1. Diesen Ordner auf den Pi kopieren (z. B. /home/admin/abrechnung/)
+#   2. .env anlegen (siehe .env.example) – VITE_API_URL auf die Pi-IP setzen
+#   3. Per SSH:  docker compose up -d --build
+#
+# Zugriff danach:
+#   Frontend: http://<pi-ip>:8080
+#   API:      http://<pi-ip>:8000
+# Die SQLite-Datenbank liegt persistent im Docker-Volume "abrechnung-data".
+
 services:
-  db:
-    image: postgres:16
-    container_name: abrechnung-db
+  backend:
+    build:
+      context: ./backend
+    container_name: abrechnung-backend
     environment:
-      POSTGRES_USER: abrechnung
-      POSTGRES_PASSWORD: abrechnung
-      POSTGRES_DB: abrechnung
+      # SQLite-Datei auf dem persistenten Volume (absoluter Pfad /data/abrechnung.db)
+      DATABASE_URL: "sqlite:////data/abrechnung.db"
     ports:
-      - "5432:5432"
+      - "8000:8000"
     volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U abrechnung"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      - abrechnung-data:/data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Gleiche Origin: nginx leitet /api ans Backend (kein CORS/PNA).
+        VITE_API_URL: ${VITE_API_URL:-/api}
+    container_name: abrechnung-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
 
 volumes:
-  pgdata:
+  abrechnung-data:
