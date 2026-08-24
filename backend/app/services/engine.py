@@ -49,6 +49,7 @@ class CategoryShare:
     basis_share: Optional[Decimal]  # Anteil des Mieters an der Basis
     days: int  # bewohnte Tage im Abrechnungsjahr
     amount: Decimal  # Kostenanteil des Mieters
+    info: list[dict] = field(default_factory=list)  # strukturierte Hover-Info
 
 
 @dataclass
@@ -237,6 +238,15 @@ def _append_strom_line(category_lines: list, configs: list, strom_brutto: Decima
     category_lines.append(CategoryLine("STROM", "Strom", strom_key, strom_brutto))
 
 
+def _fmt_de(value: Decimal, digits: int = 2) -> str:
+    """Dezimalzahl deutsch formatieren (Tausenderpunkt, Dezimalkomma)."""
+    return f"{value:,.{digits}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _money_de(value: Decimal) -> str:
+    return f"{_fmt_de(value, 2)} €"
+
+
 def compute_settlement(session: Session, property_id: int, year: int) -> SettlementResult:
     """Berechnet die komplette Nebenkostenabrechnung für ein Objekt und Jahr."""
     prop = session.get(models.Property, property_id)
@@ -397,6 +407,212 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
         else:
             warnings.append("Gesamtwasserverbrauch ist 0 – cbm-Preis kann nicht berechnet werden.")
 
+    # --- Hover-Info je Kostenstelle (für die Abrechnungsansicht) -------------------
+    # Strukturierte Zeilen: {"type": "head"|"row"|"total", "label", "menge"?,
+    #   "netto"?, "vat"?, "vat_rate"?, "betrag"?}. Alle Beträge sind BRUTTO
+    #   (inkl. MwSt); Satz links ist NETTO – wird je Position explizit aufgeschlüsselt.
+    def _info_head(text: str) -> dict:
+        return {"type": "head", "label": text, "menge": None, "betrag": None}
+
+    def _info_row(
+        label: str,
+        menge: str | None,
+        betrag: str,
+        netto: str | None = None,
+        vat: str | None = None,
+        vat_rate: float | None = None,
+    ) -> dict:
+        return {
+            "type": "row",
+            "label": label,
+            "menge": menge,
+            "netto": netto,
+            "vat": vat,
+            "vat_rate": vat_rate,
+            "betrag": betrag,
+        }
+
+    def _info_total(betrag: str) -> dict:
+        return {"type": "total", "label": "Gesamt (brutto)", "menge": None, "betrag": betrag}
+
+    def _invoice_info(cat_id: int) -> list[dict]:
+        """Auflistung der in die Gesamtkosten eingeflossenen Rechnungen einer Kostenart."""
+        invs = invoices_by_cat.get(cat_id, [])
+        if not invs:
+            return []
+        lines: list[dict] = []
+        total = ZERO
+        for inv in invs:
+            amt = _category_year_cost([inv], year)
+            total += amt
+            if amt <= 0:
+                continue  # Rechnung ohne Anteil im Jahr nicht aufführen
+            parts = [x for x in (inv.invoice_number, inv.supplier) if x]
+            if inv.period_start and inv.period_end:
+                parts.append(f"{inv.period_start}–{inv.period_end}")
+            label = " · ".join(parts) or f"Rechnung {inv.id}"
+            lines.append(_info_row(label, "anteilig", _money_de(amt)))
+        if not lines:
+            return []
+        lines.append(_info_total(_money_de(total)))
+        return lines
+
+    invoice_info: dict[str, list[dict]] = {}
+    for cfg in configs:
+        invs = invoices_by_cat.get(cfg.cost_category.id, [])
+        if invs:
+            invoice_info[cfg.cost_category.code] = _invoice_info(cfg.cost_category.id)
+
+    def _wasser_info(kinds: tuple[str, ...]) -> list[dict]:
+        """Berechnung der Wasser-Kostenstelle (Tarifpositionen der jeweiligen Art)."""
+        if wasser_res is None:
+            return []
+        lines: list[dict] = []
+        if wasser_res.get("plan") == "B" and wasser_res.get("hauptzaehler"):
+            hz = wasser_res["hauptzaehler"]
+            lines.append(
+                _info_head(f"Hauptzähler: {_fmt_de(Decimal(str(hz['consumption'])), 0)} m³")
+            )
+        elif wasser_res.get("plan") == "A":
+            lines.append(
+                _info_head(
+                    f"Wohnungsverbrauch: {_fmt_de(Decimal(str(wasser_res['verbrauch'])), 0)} m³"
+                )
+            )
+        for pos in wasser_res["positionen"]:
+            if pos["art"] not in kinds:
+                continue
+            art = pos["art"]
+            menge = Decimal(str(pos["menge"]))
+            satz = Decimal(str(pos["satz"]))
+            netto = Decimal(str(pos["netto"]))
+            vat = Decimal(str(pos["vat"]))
+            brutto = Decimal(str(pos["brutto"]))
+            vat_rate = float(pos["vat_rate"])
+            if art == "NIEDERSCHLAGSWASSER":
+                lines.append(
+                    _info_row(
+                        f"{_fmt_de(satz, 2)} €/m²/Jahr",
+                        f"{_fmt_de(menge, 0)} m²",
+                        _money_de(brutto),
+                        _money_de(netto),
+                        _money_de(vat),
+                        vat_rate,
+                    )
+                )
+            elif art == "GRUNDGEBUEHR":
+                lines.append(
+                    _info_row(
+                        f"Grundgebühr {_fmt_de(satz, 2)} €/Jahr",
+                        None,
+                        _money_de(brutto),
+                        _money_de(netto),
+                        _money_de(vat),
+                        vat_rate,
+                    )
+                )
+            else:
+                lines.append(
+                    _info_row(
+                        f"{_fmt_de(satz, 2)} €/m³",
+                        f"{_fmt_de(menge, 0)} m³",
+                        _money_de(brutto),
+                        _money_de(netto),
+                        _money_de(vat),
+                        vat_rate,
+                    )
+                )
+        gesamt = sum(
+            (Decimal(str(p["brutto"])) for p in wasser_res["positionen"] if p["art"] in kinds),
+            ZERO,
+        )
+        if gesamt > 0:
+            lines.append(_info_total(_money_de(gesamt)))
+        return lines
+
+    wasser_info: dict[str, list[dict]] = {}
+    if wasser_res is not None:
+        for cat_id, kinds in (
+            (prop.wasser_trinkwasser_category_id, ("TRINKWASSER", "GRUNDGEBUEHR")),
+            (prop.wasser_schmutzwasser_category_id, ("SCHMUTZWASSER",)),
+            (prop.wasser_niederschlag_category_id, ("NIEDERSCHLAGSWASSER",)),
+        ):
+            if not cat_id:
+                continue
+            code = category_code_by_id.get(cat_id)
+            if code is not None:
+                wasser_info[code] = _wasser_info(kinds)
+
+    def _strom_info() -> list[dict]:
+        """Berechnung der Strom-Kostenstelle inkl. Unterzähler-Abzug."""
+        if strom_res is None or strom_res.get("hauptzaehler") is None:
+            return []
+        lines: list[dict] = []
+        hz = strom_res["hauptzaehler"]
+        lines.append(_info_head(f"Hauptzähler: {_fmt_de(Decimal(str(hz['consumption'])), 0)} kWh"))
+        unter = strom_res.get("unterzaehler")
+        if unter is not None and Decimal(str(unter.get("consumption", 0))) > 0:
+            lines.append(
+                _info_head(f"− Unterzähler: {_fmt_de(Decimal(str(unter['consumption'])), 0)} kWh")
+            )
+            lines.append(
+                _info_head(
+                    f"= Nettoverbrauch: {_fmt_de(Decimal(str(strom_res['netto_verbrauch'])), 0)} kWh"
+                )
+            )
+        for pos in strom_res["positionen"]:
+            art = pos["art"]
+            menge = Decimal(str(pos["menge"]))
+            satz = Decimal(str(pos["satz"]))
+            netto = Decimal(str(pos["netto"]))
+            vat = Decimal(str(pos["vat"]))
+            brutto = Decimal(str(pos["brutto"]))
+            vat_rate = float(pos["vat_rate"])
+            if art == "GRUNDGEBUEHR":
+                lines.append(
+                    _info_row(
+                        f"Grundgebühr {_fmt_de(satz, 2)} €/Jahr",
+                        None,
+                        _money_de(brutto),
+                        _money_de(netto),
+                        _money_de(vat),
+                        vat_rate,
+                    )
+                )
+            else:
+                lines.append(
+                    _info_row(
+                        f"{_fmt_de(satz, 3)} €/kWh",
+                        f"{_fmt_de(menge, 0)} kWh",
+                        _money_de(brutto),
+                        _money_de(netto),
+                        _money_de(vat),
+                        vat_rate,
+                    )
+                )
+        gesamt = sum(
+            (Decimal(str(p["brutto"])) for p in strom_res["positionen"]), ZERO
+        )
+        if gesamt > 0:
+            lines.append(_info_total(_money_de(gesamt)))
+        return lines
+
+    strom_info_code: Optional[str] = None
+    strom_info_lines: list[dict] = []
+    if prop.strom_allocation_category_id == 0:
+        strom_info_code = "STROM"
+    elif prop.strom_allocation_category_id is not None:
+        strom_info_code = category_code_by_id.get(prop.strom_allocation_category_id)
+    if strom_info_code:
+        strom_info_lines = _strom_info()
+
+    def _category_info(cl: CategoryLine) -> list[dict]:
+        if cl.code in wasser_info:
+            return wasser_info[cl.code]
+        if strom_info_code and cl.code == strom_info_code:
+            return strom_info_lines
+        return invoice_info.get(cl.code, [])
+
     tenant_lines: list[TenantLine] = []
     for t, tenant_days in active:
         unit = t.lease_unit
@@ -486,6 +702,7 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
                     basis_share=basis_share,
                     days=tenant_days,
                     amount=amount,
+                    info=_category_info(cl),
                 )
             )
 

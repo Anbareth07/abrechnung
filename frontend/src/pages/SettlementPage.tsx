@@ -20,7 +20,14 @@ import { useTestData } from "../context/TestDataContext";
 import { useObject } from "../context/ObjectContext";
 import { useCrud } from "../hooks/useCrud";
 import { visibleProperties } from "../utils/testData";
-import type { FinalizedResult, MissingItem, NoInvoiceFlag, Property, SettlementResult } from "../api/types";
+import type {
+  CategoryInfoLine,
+  FinalizedResult,
+  MissingItem,
+  NoInvoiceFlag,
+  Property,
+  SettlementResult,
+} from "../api/types";
 
 // Zeigt Werte wie eingegeben/berechnet an – ohne Aufrundung auf 2 Stellen
 const fmtNoRound = (v: unknown): string => {
@@ -36,6 +43,122 @@ const fmtPeriod = (iso: string | null | undefined, year: number, withYear = fals
   const [y, m, d] = iso.split("-");
   return withYear ? `${d}.${m}.${y}` : `${d}.${m}`;
 };
+
+// Saldo-Anzeige im eingeklappten Mieter-Kopf: grün = Guthaben, rot mit Minus = Nachzahlung
+function SaldoText({ saldo }: { saldo: number }) {
+  if (saldo === 0) {
+    return (
+      <Text
+        size="sm"
+        c="dimmed"
+        ml="md"
+        mr="lg"
+        miw={170}
+        ta="right"
+        style={{ whiteSpace: "nowrap" }}
+      >
+        0,00 €
+      </Text>
+    );
+  }
+  const nachzahlung = saldo > 0;
+  const amount = nachzahlung ? `-${fmt(saldo)} €` : `${fmt(Math.abs(saldo))} €`;
+  return (
+    <Tooltip withArrow label={nachzahlung ? `Nachzahlung ${fmt(saldo)} €` : `Guthaben ${fmt(Math.abs(saldo))} €`}>
+      <Text
+        size="sm"
+        fw={600}
+        c={nachzahlung ? "red" : "green"}
+        ml="md"
+        mr="lg"
+        miw={170}
+        ta="right"
+        style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", cursor: "help" }}
+      >
+        {amount}
+      </Text>
+    </Tooltip>
+  );
+}
+
+// Strukturierte Hover-Info einer Kostenzeile (Berechnung/Rechnungen)
+function CategoryInfoTooltip({ info }: { info: CategoryInfoLine[] }) {
+  return (
+    <Stack gap={6} miw={280}>
+      {info.map((line, i) => {
+        if (line.type === "head") {
+          return (
+            <Text key={i} size="sm" fw={600}>
+              {line.label}
+            </Text>
+          );
+        }
+        if (line.type === "total") {
+          return (
+            <Group
+              key={i}
+              justify="space-between"
+              wrap="nowrap"
+              style={{ borderTop: "1px solid #dee2e6", paddingTop: 4 }}
+            >
+              <Text size="sm" fw={600}>
+                {line.label}
+              </Text>
+              <Text size="sm" fw={600} style={{ fontVariantNumeric: "tabular-nums" }}>
+                {line.betrag}
+              </Text>
+            </Group>
+          );
+        }
+        // Zeile mit MwSt-Aufschlüsselung: Satz (netto) → MwSt → brutto
+        if (line.vat_rate != null && line.netto != null) {
+          return (
+            <Stack key={i} gap={2}>
+              <Group justify="space-between" wrap="nowrap">
+                <Text size="sm">{line.label}</Text>
+                {line.menge && (
+                  <Text size="sm" c="dimmed">
+                    {line.menge}
+                  </Text>
+                )}
+              </Group>
+              <Group
+                gap="xs"
+                justify="space-between"
+                wrap="nowrap"
+                style={{ paddingLeft: 10 }}
+              >
+                <Text size="xs" c="dimmed">
+                  netto {line.netto}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  MwSt {line.vat} ({fmt(line.vat_rate, 0)} %)
+                </Text>
+                <Text size="xs" fw={600} style={{ fontVariantNumeric: "tabular-nums" }}>
+                  = brutto {line.betrag}
+                </Text>
+              </Group>
+            </Stack>
+          );
+        }
+        // Einfache Zeile (z. B. Rechnungsliste ohne MwSt-Aufschlüsselung)
+        return (
+          <Group key={i} justify="space-between" gap="xl" wrap="nowrap">
+            <Text size="sm">{line.label}</Text>
+            {line.menge && (
+              <Text size="sm" c="dimmed">
+                {line.menge}
+              </Text>
+            )}
+            <Text size="sm" style={{ fontVariantNumeric: "tabular-nums" }}>
+              {line.betrag}
+            </Text>
+          </Group>
+        );
+      })}
+    </Stack>
+  );
+}
 
 // Abrechnungsjahre dynamisch: von 2025 (Start) bis aktuelles Jahr + 3,
 // damit Folgejahre (z. B. 2027, 2031) ohne Codeänderung verfügbar sind.
@@ -284,8 +407,13 @@ function ResultView({
         {data.tenant_lines.map((t) => (
           <Accordion.Item key={t.tenant_id} value={String(t.tenant_id)}>
             <Accordion.Control>
-              {t.name} – {street || data.property_name} – Abrechnung für den Zeitraum{" "}
-              {fmtPeriod(t.period_start, year)} – {fmtPeriod(t.period_end, year, true)}
+              <Group justify="space-between" wrap="nowrap" style={{ flex: 1 }}>
+                <Text size="sm" truncate style={{ minWidth: 0 }}>
+                  {t.name} – {street || data.property_name} – Abrechnung für den Zeitraum{" "}
+                  {fmtPeriod(t.period_start, year)} – {fmtPeriod(t.period_end, year, true)}
+                </Text>
+                <SaldoText saldo={t.saldo} />
+              </Group>
             </Accordion.Control>
             <Accordion.Panel>
               <Group justify="flex-end" mb="xs">
@@ -315,7 +443,17 @@ function ResultView({
               {t.details.map((d) => (
                 <Table.Tr key={`${d.code}-${d.basis_label}`}>
                   <Table.Td>{d.name}</Table.Td>
-                  <Table.Td ta="right">{fmt(d.year_cost)} €</Table.Td>
+                  <Table.Td ta="right">
+                    {d.info && d.info.length > 0 ? (
+                      <Tooltip withArrow label={<CategoryInfoTooltip info={d.info} />}>
+                        <span style={{ cursor: "help", borderBottom: "1px dashed #868e96" }}>
+                          {fmt(d.year_cost)} €
+                        </span>
+                      </Tooltip>
+                    ) : (
+                      `${fmt(d.year_cost)} €`
+                    )}
+                  </Table.Td>
                   <Table.Td>{d.basis_label}</Table.Td>
                   <Table.Td ta="right">
                     {d.basis_total != null ? fmtNoRound(d.basis_total) : "—"}
@@ -419,7 +557,12 @@ function FinalizedView({
         {data.tenant_lines.map((t) => (
           <Accordion.Item key={t.tenant_id} value={String(t.tenant_id)}>
             <Accordion.Control>
-              {t.name} – {street || data.property_name} – {t.tenant_days} Tage
+              <Group justify="space-between" wrap="nowrap" style={{ flex: 1 }}>
+                <Text size="sm" truncate style={{ minWidth: 0 }}>
+                  {t.name} – {street || data.property_name} – {t.tenant_days} Tage
+                </Text>
+                <SaldoText saldo={t.saldo} />
+              </Group>
             </Accordion.Control>
             <Accordion.Panel>
               <Table withColumnBorders>

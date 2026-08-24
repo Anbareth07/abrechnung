@@ -155,8 +155,10 @@ describe("SettlementPage", () => {
     fireEvent.change(screen.getByLabelText("Objekt"), { target: { value: "3" } });
 
     expect(await screen.findByText("Nachzahlung")).toBeInTheDocument();
+    // Fußzeile zeigt den Betrag ohne Minus
     expect(screen.getByText("120,50 €")).toBeInTheDocument();
-    expect(screen.queryByText("-120,50 €")).not.toBeInTheDocument();
+    // Kopf-Saldo (eingeklappt) zeigt Nachzahlung mit Minus
+    expect(screen.getByText("-120,50 €")).toBeInTheDocument();
   });
 
   it("zeigt bei Gutschrift den Betrag ohne Minus", async () => {
@@ -181,7 +183,8 @@ describe("SettlementPage", () => {
     fireEvent.change(screen.getByLabelText("Objekt"), { target: { value: "3" } });
 
     expect(await screen.findByText("Gutschrift")).toBeInTheDocument();
-    expect(screen.getByText("90,25 €")).toBeInTheDocument();
+    // Fußzeile + Kopf (Guthaben grün ohne Minus)
+    expect(screen.getAllByText("90,25 €").length).toBeGreaterThan(0);
     expect(screen.queryByText("-90,25 €")).not.toBeInTheDocument();
   });
 

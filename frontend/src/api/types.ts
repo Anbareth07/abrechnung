@@ -195,6 +195,16 @@ export interface WaterResult {
   warnings: string[];
 }
 
+export interface CategoryInfoLine {
+  type: "head" | "row" | "total";
+  label: string;
+  menge?: string | null;
+  netto?: string | null; // Nettobetrag (ohne MwSt)
+  vat?: string | null; // MwSt-Betrag
+  vat_rate?: number | null; // MwSt-Satz in %
+  betrag?: string | null; // Bruttobetrag (inkl. MwSt)
+}
+
 export interface CategoryShare {
   code: string;
   name: string;
@@ -205,6 +215,7 @@ export interface CategoryShare {
   basis_share: number | null;
   days: number;
   amount: number;
+  info?: CategoryInfoLine[]; // strukturierte Hover-Info (Berechnung/Rechnungen)
 }
 
 export interface AdvanceSegment {
