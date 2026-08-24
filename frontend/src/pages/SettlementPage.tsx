@@ -20,6 +20,8 @@ import { useTestData } from "../context/TestDataContext";
 import { useObject } from "../context/ObjectContext";
 import { useCrud } from "../hooks/useCrud";
 import { visibleProperties } from "../utils/testData";
+import PageHelp from "../components/PageHelp";
+import { abrechnungHelp } from "../help/helpContent";
 import type {
   CategoryInfoLine,
   FinalizedResult,
@@ -238,7 +240,10 @@ export default function SettlementPage() {
   if (!propertyId) {
     return (
       <Stack>
-        <Title order={2}>Abrechnung</Title>
+        <Group>
+          <Title order={2}>Abrechnung</Title>
+          <PageHelp content={abrechnungHelp} />
+        </Group>
         <Select
           label="Objekt"
           placeholder="Objekt wählen"
@@ -253,7 +258,10 @@ export default function SettlementPage() {
 
   return (
     <Stack>
-      <Title order={2}>Abrechnung</Title>
+      <Group>
+        <Title order={2}>Abrechnung</Title>
+        <PageHelp content={abrechnungHelp} />
+      </Group>
       <Group>
         <Select
           label="Objekt"

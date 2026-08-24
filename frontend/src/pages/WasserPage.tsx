@@ -20,6 +20,8 @@ import { api } from "../api/client";
 import { ConfirmDeleteModal } from "../components/ConfirmDeleteModal";
 import WasserWohnungszaehler from "../components/WasserWohnungszaehler";
 import ZaehlerwechselFields from "../components/ZaehlerwechselFields";
+import PageHelp from "../components/PageHelp";
+import { wasserHelp } from "../help/helpContent";
 import { useTestData } from "../context/TestDataContext";
 import { useObject } from "../context/ObjectContext";
 import { useCrud } from "../hooks/useCrud";
@@ -277,7 +279,10 @@ export default function WasserPage() {
 
   return (
     <Stack>
-      <Title order={2}>Wasser</Title>
+      <Group>
+        <Title order={2}>Wasser</Title>
+        <PageHelp content={wasserHelp} />
+      </Group>
       <Group>
         <Select
           label="Objekt"

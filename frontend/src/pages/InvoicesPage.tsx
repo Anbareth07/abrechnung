@@ -16,6 +16,8 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { ConfirmDeleteModal } from "../components/ConfirmDeleteModal";
+import PageHelp from "../components/PageHelp";
+import { rechnungenHelp } from "../help/helpContent";
 import { useTestData } from "../context/TestDataContext";
 import { useObject } from "../context/ObjectContext";
 import { useCrud } from "../hooks/useCrud";
@@ -240,7 +242,10 @@ export default function InvoicesPage() {
 
   return (
     <Stack>
-      <Title order={2}>Rechnungen</Title>
+      <Group>
+        <Title order={2}>Rechnungen</Title>
+        <PageHelp content={rechnungenHelp} />
+      </Group>
       <Group>
         <Select
           label="Objekt"

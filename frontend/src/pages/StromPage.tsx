@@ -19,6 +19,8 @@ import { notifications } from "@mantine/notifications";
 import { api } from "../api/client";
 import { ConfirmDeleteModal } from "../components/ConfirmDeleteModal";
 import ZaehlerwechselFields from "../components/ZaehlerwechselFields";
+import PageHelp from "../components/PageHelp";
+import { stromHelp } from "../help/helpContent";
 import { useTestData } from "../context/TestDataContext";
 import { useObject } from "../context/ObjectContext";
 import { useCrud } from "../hooks/useCrud";
@@ -263,7 +265,10 @@ export default function StromPage() {
 
   return (
     <Stack>
-      <Title order={2}>Strom</Title>
+      <Group>
+        <Title order={2}>Strom</Title>
+        <PageHelp content={stromHelp} />
+      </Group>
       <Group>
         <Select
           label="Objekt"

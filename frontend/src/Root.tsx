@@ -1,8 +1,11 @@
-import { AppShell, Burger, Checkbox, Group, NavLink, Title } from "@mantine/core";
+import { useState } from "react";
+import { AppShell, Burger, Checkbox, Divider, Group, NavLink, Title } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useTestData } from "./context/TestDataContext";
 import { ObjectProvider } from "./context/ObjectContext";
+import HelpModal, { type HelpContent } from "./components/HelpModal";
+import { mieterwechselGuide, settlementGuide, stammdatenSetupGuide } from "./help/helpContent";
 import StammdatenPage from "./pages/StammdatenPage";
 import InvoicesPage from "./pages/InvoicesPage";
 import SettlementPage from "./pages/SettlementPage";
@@ -21,6 +24,7 @@ const links = [
 
 export default function Root() {
   const [opened, { toggle }] = useDisclosure();
+  const [guide, setGuide] = useState<HelpContent | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { hideTest, setHideTest } = useTestData();
@@ -54,6 +58,22 @@ export default function Root() {
             onClick={() => navigate(l.path)}
           />
         ))}
+        <Divider my="sm" label="Anleitung" labelPosition="left" />
+        <NavLink
+          label="Abrechnung erstellen"
+          description="Wiederkehrende Aufgaben"
+          onClick={() => setGuide(settlementGuide)}
+        />
+        <NavLink
+          label="Stammdaten – Erstsetup"
+          description="Neues Objekt einrichten"
+          onClick={() => setGuide(stammdatenSetupGuide)}
+        />
+        <NavLink
+          label="Mieterwechsel"
+          description="Ein-/Auszug erfassen"
+          onClick={() => setGuide(mieterwechselGuide)}
+        />
       </AppShell.Navbar>
 
       <AppShell.Main>
@@ -69,6 +89,8 @@ export default function Root() {
           </Routes>
         </ObjectProvider>
       </AppShell.Main>
+
+      <HelpModal opened={guide != null} onClose={() => setGuide(null)} content={guide ?? settlementGuide} />
     </AppShell>
   );
 }

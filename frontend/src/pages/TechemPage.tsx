@@ -15,6 +15,8 @@ import { notifications } from "@mantine/notifications";
 import { useQuery } from "@tanstack/react-query";
 import { api, fmt } from "../api/client";
 import { ConfirmDeleteModal } from "../components/ConfirmDeleteModal";
+import PageHelp from "../components/PageHelp";
+import { techemHelp } from "../help/helpContent";
 import { useTestData } from "../context/TestDataContext";
 import { useObject } from "../context/ObjectContext";
 import { useCrud } from "../hooks/useCrud";
@@ -123,7 +125,10 @@ export default function TechemPage() {
 
   return (
     <Stack>
-      <Title order={2}>Techem – Heizkosten-Datenaufbereitung</Title>
+      <Group>
+        <Title order={2}>Techem – Heizkosten-Datenaufbereitung</Title>
+        <PageHelp content={techemHelp} />
+      </Group>
       <Text size="sm" c="dimmed">
         Je Objekt und Heizperiode (Standard 01.07.–30.06. des Folgejahres). Fließt nicht in die
         Mieter-Abrechnung ein.

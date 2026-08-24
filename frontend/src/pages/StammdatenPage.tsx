@@ -21,6 +21,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, fmt, num } from "../api/client";
 import { ConfirmDeleteModal } from "../components/ConfirmDeleteModal";
 import { InlineEdit } from "../components/InlineEdit";
+import PageHelp from "../components/PageHelp";
+import { stammdatenHelp } from "../help/helpContent";
 import { useTestData } from "../context/TestDataContext";
 import { useCrud } from "../hooks/useCrud";
 import {
@@ -65,7 +67,10 @@ const monthStart = (iso: string): string => {
 export default function StammdatenPage() {
   return (
     <Stack>
-      <Title order={2}>Stammdaten</Title>
+      <Group>
+        <Title order={2}>Stammdaten</Title>
+        <PageHelp content={stammdatenHelp} />
+      </Group>
       <Tabs defaultValue="properties">
         <Tabs.List>
           <Tabs.Tab value="properties">Objekte</Tabs.Tab>
