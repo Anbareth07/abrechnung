@@ -322,6 +322,9 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
         strom_res = strom_service.berechnung(session, property_id, ys, ye)
     except ValueError:
         strom_res = None
+    if strom_res is not None:
+        # Hinweis, wenn die Strom-Berechnung den Zeitraum nicht abdeckt
+        warnings.extend(strom_res.get("warnings", []))
     if strom_res is not None and strom_res.get("hauptzaehler") is not None:
         strom_brutto = Decimal(str(strom_res["summen"]["brutto"]))
         # Zuordnung Strom → Abrechnung (je Objekt im Strom-Modul):
@@ -353,6 +356,8 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
     except ValueError:
         wasser_res = None
     if wasser_res is not None:
+        # Hinweis, wenn die Wasser-Berechnung den Zeitraum nicht abdeckt
+        warnings.extend(wasser_res.get("warnings", []))
         wasser_brutto: dict[str, Decimal] = {}
         for pos in wasser_res["positionen"]:
             wasser_brutto[pos["art"]] = wasser_brutto.get(pos["art"], ZERO) + Decimal(

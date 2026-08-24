@@ -84,6 +84,36 @@ def _prorate_annual(amount: Decimal, seg_start: date, seg_end: date) -> Decimal:
     return total
 
 
+def _strom_readings(session: Session, property_id: int, role: str) -> list:
+    return session.execute(
+        select(models.StromReading)
+        .where(
+            models.StromReading.property_id == property_id,
+            models.StromReading.role == role,
+        )
+        .order_by(models.StromReading.reading_date)
+    ).scalars().all()
+
+
+def _coverage_warnings(name: str, readings: list, von: date, bis: date) -> list[str]:
+    """Warnungen, wenn die Zählerstände den Zeitraum [von, bis] nicht abdecken."""
+    if not readings:
+        return [f"{name}: keine Zählerstände – Berechnung für den Zeitraum unvollständig."]
+    first, last = readings[0].reading_date, readings[-1].reading_date
+    out: list[str] = []
+    if first > von:
+        out.append(
+            f"{name}: Zählerstand zum Jahresanfang ({von.isoformat()}) fehlt "
+            f"(erster Stand {first.isoformat()}) – Berechnung unvollständig."
+        )
+    if last < bis:
+        out.append(
+            f"{name}: Zählerstand zum Jahresende ({bis.isoformat()}) fehlt "
+            f"(letzter Stand {last.isoformat()}) – Berechnung unvollständig."
+        )
+    return out
+
+
 def berechnung(session: Session, property_id: int, von: date, bis: date) -> dict:
     """Berechnet Verbrauch und Kosten für Strom im Zeitraum [von, bis]."""
     if von > bis:
@@ -91,6 +121,21 @@ def berechnung(session: Session, property_id: int, von: date, bis: date) -> dict
 
     prop = session.get(models.Property, property_id)
     unter_aktiv = bool(prop.strom_unterzaehler_aktiv) if prop is not None else True
+
+    # Warnungen, wenn die Zählerstände den Zeitraum nicht abdecken (unvollständige Berechnung)
+    warnings: list[str] = []
+    haupt_readings = _strom_readings(session, property_id, "HAUPTZAEHLER")
+    unter_readings = _strom_readings(session, property_id, "UNTERZAEHLER") if unter_aktiv else []
+    prices_exist = (
+        session.execute(
+            select(models.StromPrice.id).where(models.StromPrice.property_id == property_id).limit(1)
+        ).first()
+        is not None
+    )
+    if prices_exist or haupt_readings or unter_readings:
+        warnings.extend(_coverage_warnings("Strom Hauptzähler", haupt_readings, von, bis))
+        if unter_aktiv:
+            warnings.extend(_coverage_warnings("Strom Unterzähler", unter_readings, von, bis))
 
     haupt = _meter_consumption(session, property_id, "HAUPTZAEHLER", von, bis)
     unter = _meter_consumption(session, property_id, "UNTERZAEHLER", von, bis) if unter_aktiv else None
@@ -150,6 +195,7 @@ def berechnung(session: Session, property_id: int, von: date, bis: date) -> dict
         "unterzaehler": unter,
         "netto_verbrauch": float(netto_verbrauch),
         "positionen": positionen,
+        "warnings": warnings,
         "summen": {
             "netto": float(sum_netto),
             "vat": float(sum_vat),

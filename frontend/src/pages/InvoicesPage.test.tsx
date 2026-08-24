@@ -1,6 +1,6 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AllocationConfig, CostCategory, Invoice, LeaseUnit, Property } from "../api/types";
@@ -97,6 +97,9 @@ const openNew = async (user: ReturnType<typeof userEvent.setup>) => {
   await screen.findByRole("button", { name: "Speichern" });
 };
 
+// Felder im geöffneten Dialog abfragen (der Kopf-Filter heißt ebenso "Objekt" wie das Modal-Feld)
+const inDialog = () => within(screen.getByRole("dialog"));
+
 describe("InvoicesPage generische Rechnung", () => {
   beforeEach(() => {
     localStorage.removeItem("abrechnung.selectedObject");
@@ -119,10 +122,10 @@ describe("InvoicesPage generische Rechnung", () => {
     renderPage();
     await openNew(user);
 
-    await user.selectOptions(screen.getByLabelText("Objekt"), "3");
-    await user.selectOptions(screen.getByLabelText("Kostenstelle"), "10");
-    await user.type(screen.getByLabelText("Titel"), "Grundsteuer 2025");
-    await user.type(screen.getByLabelText("Summe (€)"), "1200");
+    await user.selectOptions(inDialog().getByLabelText("Objekt"), "3");
+    await user.selectOptions(inDialog().getByLabelText("Kostenstelle"), "10");
+    await user.type(inDialog().getByLabelText("Titel"), "Grundsteuer 2025");
+    await user.type(inDialog().getByLabelText("Summe (€)"), "1200");
 
     await user.click(screen.getByRole("button", { name: "Speichern" }));
 
@@ -151,23 +154,23 @@ describe("InvoicesPage generische Rechnung", () => {
     renderPage();
     await openNew(user);
 
-    await user.selectOptions(screen.getByLabelText("Objekt"), "3");
+    await user.selectOptions(inDialog().getByLabelText("Objekt"), "3");
     // Grundsteuer (NF) → keine Wohnungsauswahl
-    await user.selectOptions(screen.getByLabelText("Kostenstelle"), "10");
+    await user.selectOptions(inDialog().getByLabelText("Kostenstelle"), "10");
     expect(screen.queryByLabelText("Wohnung (je Wohnung)")).not.toBeInTheDocument();
 
     // Wohnungskosten (WOHNUNG) → Wohnungsauswahl erscheint und ist Pflicht
-    await user.selectOptions(screen.getByLabelText("Kostenstelle"), "11");
-    expect(screen.getByLabelText("Wohnung (je Wohnung)")).toBeInTheDocument();
+    await user.selectOptions(inDialog().getByLabelText("Kostenstelle"), "11");
+    expect(inDialog().getByLabelText("Wohnung (je Wohnung)")).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Wohnung 1" })).toBeInTheDocument();
 
-    await user.type(screen.getByLabelText("Titel"), "Schornstein");
-    await user.type(screen.getByLabelText("Summe (€)"), "120");
+    await user.type(inDialog().getByLabelText("Titel"), "Schornstein");
+    await user.type(inDialog().getByLabelText("Summe (€)"), "120");
     // Ohne Wohnung → Speichern deaktiviert
     expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
 
     // Wohnung wählen → Speichern möglich
-    await user.selectOptions(screen.getByLabelText("Wohnung (je Wohnung)"), "7");
+    await user.selectOptions(inDialog().getByLabelText("Wohnung (je Wohnung)"), "7");
     expect(screen.getByRole("button", { name: "Speichern" })).toBeEnabled();
   });
 
@@ -179,12 +182,12 @@ describe("InvoicesPage generische Rechnung", () => {
     // Ohne Auswahl/Felder → Speichern deaktiviert
     expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
 
-    await user.selectOptions(screen.getByLabelText("Objekt"), "3");
-    await user.selectOptions(screen.getByLabelText("Kostenstelle"), "10");
+    await user.selectOptions(inDialog().getByLabelText("Objekt"), "3");
+    await user.selectOptions(inDialog().getByLabelText("Kostenstelle"), "10");
     expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
 
-    await user.type(screen.getByLabelText("Titel"), "Grundsteuer");
-    await user.type(screen.getByLabelText("Summe (€)"), "1200");
+    await user.type(inDialog().getByLabelText("Titel"), "Grundsteuer");
+    await user.type(inDialog().getByLabelText("Summe (€)"), "1200");
     expect(screen.getByRole("button", { name: "Speichern" })).toBeEnabled();
   });
 
@@ -193,11 +196,11 @@ describe("InvoicesPage generische Rechnung", () => {
     renderPage();
     await openNew(user);
 
-    await user.selectOptions(screen.getByLabelText("Objekt"), "3");
-    await user.selectOptions(screen.getByLabelText("Kostenstelle"), "10");
-    await user.type(screen.getByLabelText("Titel"), "Garten 1");
-    await user.type(screen.getByLabelText("Summe (€)"), "150");
-    await user.type(screen.getByLabelText("Kommentar (optional)"), "Notiz");
+    await user.selectOptions(inDialog().getByLabelText("Objekt"), "3");
+    await user.selectOptions(inDialog().getByLabelText("Kostenstelle"), "10");
+    await user.type(inDialog().getByLabelText("Titel"), "Garten 1");
+    await user.type(inDialog().getByLabelText("Summe (€)"), "150");
+    await user.type(inDialog().getByLabelText("Kommentar (optional)"), "Notiz");
 
     await user.click(screen.getByRole("checkbox", { name: /Dialog offen lassen/ }));
     await user.click(screen.getByRole("button", { name: "Speichern" }));
@@ -206,12 +209,12 @@ describe("InvoicesPage generische Rechnung", () => {
     // Dialog bleibt offen
     expect(screen.getByRole("button", { name: "Speichern" })).toBeInTheDocument();
     // Titel/Summe/Kommentar sind geleert
-    expect(screen.getByLabelText("Titel")).toHaveValue("");
-    expect(screen.getByLabelText("Summe (€)")).toHaveValue("");
-    expect(screen.getByLabelText("Kommentar (optional)")).toHaveValue("");
+    expect(inDialog().getByLabelText("Titel")).toHaveValue("");
+    expect(inDialog().getByLabelText("Summe (€)")).toHaveValue("");
+    expect(inDialog().getByLabelText("Kommentar (optional)")).toHaveValue("");
     // Objekt und Kostenstelle bleiben vorbelegt
-    expect(screen.getByLabelText("Objekt")).toHaveValue("3");
-    expect(screen.getByLabelText("Kostenstelle")).toHaveValue("10");
+    expect(inDialog().getByLabelText("Objekt")).toHaveValue("3");
+    expect(inDialog().getByLabelText("Kostenstelle")).toHaveValue("10");
   });
 
   it("klont eine Rechnung für das Folgejahr mit vorbelegten Feldern", async () => {
@@ -239,11 +242,11 @@ describe("InvoicesPage generische Rechnung", () => {
     await screen.findByRole("button", { name: "Speichern" });
 
     // Felder vorbelegt, Jahr = Folgejahr
-    expect(screen.getByLabelText("Objekt")).toHaveValue("3");
-    expect(screen.getByLabelText("Jahr")).toHaveValue(next);
-    expect(screen.getByLabelText("Kostenstelle")).toHaveValue("10");
-    expect(screen.getByLabelText("Titel")).toHaveValue("Grundsteuer 2025");
-    expect(screen.getByLabelText("Summe (€)")).toHaveValue("1200");
-    expect(screen.getByLabelText("Kommentar (optional)")).toHaveValue("Notiz");
+    expect(inDialog().getByLabelText("Objekt")).toHaveValue("3");
+    expect(inDialog().getByLabelText("Jahr")).toHaveValue(next);
+    expect(inDialog().getByLabelText("Kostenstelle")).toHaveValue("10");
+    expect(inDialog().getByLabelText("Titel")).toHaveValue("Grundsteuer 2025");
+    expect(inDialog().getByLabelText("Summe (€)")).toHaveValue("1200");
+    expect(inDialog().getByLabelText("Kommentar (optional)")).toHaveValue("Notiz");
   });
 });

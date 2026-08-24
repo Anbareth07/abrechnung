@@ -291,10 +291,10 @@ export default function WasserPage() {
 
       {propertyId != null && (
         <>
-          <Card withBorder p="sm">
-            <Text fw={600} mb={4}>
+          <Card withBorder p="sm" mb="md">
+            <Title order={4} mb="sm">
               Zuordnung zur Abrechnung
-            </Text>
+            </Title>
             <Text size="xs" c="dimmed" mb="xs">
               Wähle für Trinkwasser, Schmutzwasser und Niederschlagswasser die bestehende Kostenstelle in der
               Abrechnung.

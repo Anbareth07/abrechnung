@@ -278,9 +278,9 @@ export default function StromPage() {
       {propertyId != null && (
         <>
           <Card withBorder p="sm" mb="md">
-            <Text fw={600} mb={4}>
+            <Title order={4} mb="sm">
               Zuordnung zur Abrechnung
-            </Text>
+            </Title>
             <Group align="flex-end">
               <Select
                 label="Stromkosten in der Abrechnung"

@@ -427,7 +427,7 @@ function ResultView({
                   PDF
                 </Button>
               </Group>
-              <Table withColumnBorders>
+              <Table striped highlightOnHover>
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Kostenart</Table.Th>
@@ -565,7 +565,7 @@ function FinalizedView({
               </Group>
             </Accordion.Control>
             <Accordion.Panel>
-              <Table withColumnBorders>
+              <Table striped highlightOnHover>
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Kostenart</Table.Th>

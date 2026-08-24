@@ -154,11 +154,11 @@ export default function TechemPage() {
 
       {propertyId != null && (
         <Card withBorder p="md">
-          <Text fw={600} mb="xs">
+          <Title order={4} mb="xs">
             Heizkosten-Blatt {period.von} – {period.bis}
-          </Text>
+          </Title>
 
-          <Table withColumnBorders mb="sm">
+          <Table striped highlightOnHover mb="sm">
             <Table.Thead>
               <Table.Tr>
                 <Table.Th w={80}>Einheit</Table.Th>

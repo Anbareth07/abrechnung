@@ -99,12 +99,16 @@ def _apartment_consumption(session: Session, property_id: int, von: date, bis: d
     return total
 
 
-def _meter_consumption(session: Session, property_id: int, von: date, bis: date) -> dict | None:
-    readings = session.execute(
+def _wasser_readings(session: Session, property_id: int) -> list:
+    return session.execute(
         select(models.WasserReading)
         .where(models.WasserReading.property_id == property_id)
         .order_by(models.WasserReading.reading_date)
     ).scalars().all()
+
+
+def _meter_consumption(session: Session, property_id: int, von: date, bis: date) -> dict | None:
+    readings = _wasser_readings(session, property_id)
     if not readings:
         return None
     # Zählerwechsel-sichere Berechnung (Wert-vor-Wechsel + Startwert des neuen Zählers);
@@ -117,6 +121,25 @@ def _meter_consumption(session: Session, property_id: int, von: date, bis: date)
         "end_reading": float(end),
         "consumption": float(consumption),
     }
+
+
+def _coverage_warnings(name: str, readings: list, von: date, bis: date) -> list[str]:
+    """Warnungen, wenn die Zählerstände den Zeitraum [von, bis] nicht abdecken."""
+    if not readings:
+        return [f"{name}: keine Zählerstände – Berechnung für den Zeitraum unvollständig."]
+    first, last = readings[0].reading_date, readings[-1].reading_date
+    out: list[str] = []
+    if first > von:
+        out.append(
+            f"{name}: Zählerstand zum Jahresanfang ({von.isoformat()}) fehlt "
+            f"(erster Stand {first.isoformat()}) – Berechnung unvollständig."
+        )
+    if last < bis:
+        out.append(
+            f"{name}: Zählerstand zum Jahresende ({bis.isoformat()}) fehlt "
+            f"(letzter Stand {last.isoformat()}) – Berechnung unvollständig."
+        )
+    return out
 
 
 def _prorate_annual(amount: Decimal, seg_start: date, seg_end: date) -> Decimal:
@@ -141,11 +164,24 @@ def berechnung(session: Session, property_id: int, von: date, bis: date) -> dict
         raise ValueError("Zeitraum ungültig: von darf nicht nach bis liegen")
 
     plan_a = is_plan_a(session, property_id)
+    warnings: list[str] = []
     if plan_a:
         # Plan A: keine Hauptzählerstände – Verbrauch = Summe der Wohnungszähler
         haupt = None
         verbrauch = _apartment_consumption(session, property_id, von, bis)
     else:
+        # Warnung, wenn der Hauptzähler den Zeitraum nicht abdeckt (unvollständige Berechnung)
+        prices_exist = (
+            session.execute(
+                select(models.WasserPrice.id)
+                .where(models.WasserPrice.property_id == property_id)
+                .limit(1)
+            ).first()
+            is not None
+        )
+        haupt_readings = _wasser_readings(session, property_id)
+        if prices_exist or haupt_readings:
+            warnings.extend(_coverage_warnings("Wasser Hauptzähler", haupt_readings, von, bis))
         haupt = _meter_consumption(session, property_id, von, bis)
         verbrauch = Decimal(haupt["consumption"]) if haupt else ZERO
 
@@ -213,6 +249,7 @@ def berechnung(session: Session, property_id: int, von: date, bis: date) -> dict
         "verbrauch": float(verbrauch),
         "versiegelte_flaeche": float(versiegelt_dec) if versiegelt is not None else None,
         "positionen": positionen,
+        "warnings": warnings,
         "summen": {
             "netto": float(sum_netto),
             "vat": float(sum_vat),

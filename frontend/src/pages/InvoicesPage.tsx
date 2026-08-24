@@ -243,7 +243,7 @@ export default function InvoicesPage() {
       <Title order={2}>Rechnungen</Title>
       <Group>
         <Select
-          label="Objekt filter"
+          label="Objekt"
           placeholder="Alle Objekte"
           clearable
           data={visibleProperties(props.list.data ?? [], hideTest).map((p) => ({ value: String(p.id), label: p.name }))}
@@ -252,7 +252,7 @@ export default function InvoicesPage() {
           w={280}
         />
         <Select
-          label="Jahr filter"
+          label="Jahr"
           placeholder="Alle Jahre"
           clearable
           data={YEARS.map((y) => ({ value: y, label: y }))}

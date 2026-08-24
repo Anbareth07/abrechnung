@@ -231,7 +231,9 @@ function PropertiesTab() {
             checked={form.is_test}
             onChange={(e) => setForm({ ...form, is_test: e.currentTarget.checked })}
           />
-          <Button onClick={save}>Speichern</Button>
+          <Group justify="flex-end">
+            <Button onClick={save}>Speichern</Button>
+          </Group>
         </Stack>
       </Modal>
     </>
@@ -384,7 +386,9 @@ function UnitsTab() {
               decimalScale={3}
             />
           </Group>
-          <Button onClick={save}>Speichern</Button>
+          <Group justify="flex-end">
+            <Button onClick={save}>Speichern</Button>
+          </Group>
         </Stack>
       </Modal>
     </>
@@ -728,7 +732,9 @@ export function TenantsTab() {
             + Kosten hinzufügen
           </Button>
 
-          <Button onClick={save}>Speichern</Button>
+          <Group justify="flex-end">
+            <Button onClick={save}>Speichern</Button>
+          </Group>
         </Stack>
       </Modal>
 
