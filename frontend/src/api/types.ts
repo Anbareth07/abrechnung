@@ -98,6 +98,8 @@ export interface Invoice {
   period_start: string;
   period_end: string;
   gross_amount?: Money | null;
+  anteil_zaehler?: number | null;
+  anteil_nenner?: number | null;
   meta?: Record<string, unknown>;
   items: InvoiceItem[];
 }
@@ -196,7 +198,7 @@ export interface WaterResult {
 }
 
 export interface CategoryInfoLine {
-  type: "head" | "row" | "total";
+  type: "head" | "row" | "total" | "hinweis";
   label: string;
   menge?: string | null;
   netto?: string | null; // Nettobetrag (ohne MwSt)

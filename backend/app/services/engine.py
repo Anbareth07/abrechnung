@@ -210,8 +210,23 @@ def _recurring_year_cost(invoices: list, year: int) -> Decimal:
         if active is None or active.annual_amount is None:
             continue
         days = (seg_end - seg_start).days + 1
-        total += active.annual_amount * (Decimal(days) / Decimal(diy))
+        total += (
+            active.annual_amount
+            * (Decimal(days) / Decimal(diy))
+            * _anteil_factor(active)
+        )
     return total
+
+
+def _anteil_factor(inv) -> Decimal:
+    """Anrechnungsanteil als Faktor (Zähler/Nenner); Standard 1 (= 100 %)."""
+    z, n = inv.anteil_zaehler, inv.anteil_nenner
+    if z is None or n is None:
+        return Decimal(1)
+    n = Decimal(str(n))
+    if n == 0:
+        return Decimal(1)
+    return Decimal(str(z)) / n
 
 
 def _category_year_cost(invoices: list, year: int) -> Decimal:
@@ -225,7 +240,10 @@ def _category_year_cost(invoices: list, year: int) -> Decimal:
         if inv.kind == InvoiceKind.GRUNDSTEUER and inv.valid_from is not None:
             continue
         for item in inv.items:
-            total += pro_rata_amount(item.gross_amount, item.from_date, item.to_date, year)
+            total += (
+                pro_rata_amount(item.gross_amount, item.from_date, item.to_date, year)
+                * _anteil_factor(inv)
+            )
     return total
 
 
@@ -291,7 +309,10 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
     for inv in invoices:
         if inv.lease_unit_id is not None:
             for item in inv.items:
-                val = pro_rata_amount(item.gross_amount, item.from_date, item.to_date, year)
+                val = (
+                    pro_rata_amount(item.gross_amount, item.from_date, item.to_date, year)
+                    * _anteil_factor(inv)
+                )
                 key = (inv.lease_unit_id, inv.cost_category_id)
                 unit_costs[key] = unit_costs.get(key, ZERO) + val
         else:
@@ -440,6 +461,18 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
     def _info_total(betrag: str) -> dict:
         return {"type": "total", "label": "Gesamt (brutto)", "menge": None, "betrag": betrag}
 
+    def _info_hinweis(text: str) -> dict:
+        """Hinweistext (Fußnote) zur Kostenstelle, z. B. Anrechnungsanteil."""
+        return {
+            "type": "hinweis",
+            "label": text,
+            "menge": None,
+            "netto": None,
+            "vat": None,
+            "vat_rate": None,
+            "betrag": None,
+        }
+
     def _invoice_info(cat_id: int) -> list[dict]:
         """Auflistung der in die Gesamtkosten eingeflossenen Rechnungen einer Kostenart."""
         invs = invoices_by_cat.get(cat_id, [])
@@ -452,6 +485,25 @@ def compute_settlement(session: Session, property_id: int, year: int) -> Settlem
             total += amt
             if amt <= 0:
                 continue  # Rechnung ohne Anteil im Jahr nicht aufführen
+            faktor = _anteil_factor(inv)
+            if faktor != 1:
+                if (
+                    inv.kind == InvoiceKind.GRUNDSTEUER
+                    and inv.valid_from is not None
+                    and inv.annual_amount is not None
+                ):
+                    real = inv.annual_amount
+                else:
+                    real = sum((it.gross_amount for it in inv.items), ZERO)
+                charged = money(real * faktor)
+                z = int(Decimal(str(inv.anteil_zaehler)))
+                n = int(Decimal(str(inv.anteil_nenner)))
+                lines.append(
+                    _info_hinweis(
+                        f"Anrechnungsanteil {z}/{n}: "
+                        f"von {_money_de(real)} werden {_money_de(charged)} angerechnet"
+                    )
+                )
             parts = [x for x in (inv.invoice_number, inv.supplier) if x]
             if inv.period_start and inv.period_end:
                 parts.append(f"{inv.period_start}–{inv.period_end}")

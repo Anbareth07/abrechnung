@@ -15,6 +15,7 @@ build/
 # Local databases
 *.db
 *.db.bak
+*.db.bak.*
 *.sqlite3
 
 # Frontend

@@ -88,6 +88,13 @@ function CategoryInfoTooltip({ info }: { info: CategoryInfoLine[] }) {
   return (
     <Stack gap={6} miw={280}>
       {info.map((line, i) => {
+        if (line.type === "hinweis") {
+          return (
+            <Text key={i} size="xs" c="dimmed" fs="italic" style={{ lineHeight: 1.4 }}>
+              {line.label}
+            </Text>
+          );
+        }
         if (line.type === "head") {
           return (
             <Text key={i} size="sm" fw={600}>
@@ -284,6 +291,7 @@ export default function SettlementPage() {
             ]}
           />
         </Stack>
+
       </Group>
 
       {completeness.data && completeness.data.length > 0 && (
@@ -410,31 +418,42 @@ function ResultView({
         </Alert>
       )}
 
-      <Title order={4}>Mieterabrechnungen</Title>
+      <Group wrap="nowrap" gap="md">
+        <Title order={4}>Mieterabrechnungen</Title>
+        <Button
+          variant="outline"
+          component="a"
+          href={`${API_URL}/settlements/${propertyId}/${year}/export.xlsx`}
+          target="_blank"
+        >
+          Excel
+        </Button>
+      </Group>
       <Accordion multiple value={open} onChange={onOpenChange}>
         {data.tenant_lines.map((t) => (
           <Accordion.Item key={t.tenant_id} value={String(t.tenant_id)}>
             <Accordion.Control>
               <Group justify="space-between" wrap="nowrap" style={{ flex: 1 }}>
-                <Text size="sm" truncate style={{ minWidth: 0 }}>
-                  {t.name} – {street || data.property_name} – Abrechnung für den Zeitraum{" "}
-                  {fmtPeriod(t.period_start, year)} – {fmtPeriod(t.period_end, year, true)}
-                </Text>
+                <Group gap="md" wrap="nowrap" style={{ minWidth: 0 }}>
+                  <Text size="sm" truncate style={{ minWidth: 0 }}>
+                    {t.name} – {street || data.property_name} – Abrechnung für den Zeitraum{" "}
+                    {fmtPeriod(t.period_start, year)} – {fmtPeriod(t.period_end, year, true)}
+                  </Text>
+                  <Button
+                    size="compact-xs"
+                    variant="outline"
+                    component="a"
+                    href={`${API_URL}/settlements/${propertyId}/${year}/tenants/${t.tenant_id}/pdf`}
+                    target="_blank"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    PDF
+                  </Button>
+                </Group>
                 <SaldoText saldo={t.saldo} />
               </Group>
             </Accordion.Control>
             <Accordion.Panel>
-              <Group justify="flex-end" mb="xs">
-                <Button
-                  size="compact-xs"
-                  variant="outline"
-                  component="a"
-                  href={`${API_URL}/settlements/${propertyId}/${year}/tenants/${t.tenant_id}/pdf`}
-                  target="_blank"
-                >
-                  PDF
-                </Button>
-              </Group>
               <Table striped highlightOnHover>
                 <Table.Thead>
                   <Table.Tr>

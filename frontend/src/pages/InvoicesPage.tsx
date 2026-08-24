@@ -64,9 +64,13 @@ export default function InvoicesPage() {
     title: "",
     amount: "",
     comment: "",
+    anteil_zaehler: "",
+    anteil_nenner: "",
   });
   // Dialog nach dem Speichern offen lassen (z. B. für mehrere Rechnungen derselben Kostenstelle)
   const [keepOpen, setKeepOpen] = useState(false);
+  // Anrechnungsanteil (Zähler/Nenner) standardmäßig ausgeblendet – nur über Button
+  const [showAnteil, setShowAnteil] = useState(false);
 
   const catName = (id: number) => cats.list.data?.find((c) => c.id === id)?.name ?? "";
   const propName = (id: number) => props.list.data?.find((p) => p.id === id)?.name ?? "";
@@ -92,7 +96,10 @@ export default function InvoicesPage() {
       title: "",
       amount: "",
       comment: "",
+      anteil_zaehler: "",
+      anteil_nenner: "",
     });
+    setShowAnteil(false);
     setOpen(true);
   };
 
@@ -109,7 +116,10 @@ export default function InvoicesPage() {
         inv.meta && "kommentar" in inv.meta
           ? String((inv.meta as Record<string, unknown>).kommentar)
           : "",
+      anteil_zaehler: inv.anteil_zaehler != null ? String(inv.anteil_zaehler) : "",
+      anteil_nenner: inv.anteil_nenner != null ? String(inv.anteil_nenner) : "",
     });
+    setShowAnteil(inv.anteil_zaehler != null || inv.anteil_nenner != null);
     setOpen(true);
   };
 
@@ -131,7 +141,10 @@ export default function InvoicesPage() {
         inv.meta && "kommentar" in inv.meta
           ? String((inv.meta as Record<string, unknown>).kommentar)
           : "",
+      anteil_zaehler: inv.anteil_zaehler != null ? String(inv.anteil_zaehler) : "",
+      anteil_nenner: inv.anteil_nenner != null ? String(inv.anteil_nenner) : "",
     });
+    setShowAnteil(inv.anteil_zaehler != null || inv.anteil_nenner != null);
     setOpen(true);
   };
 
@@ -147,6 +160,8 @@ export default function InvoicesPage() {
       description: form.title || null,
       gross_amount: amount === "0" ? null : amount,
       meta: form.comment ? { kommentar: form.comment } : {},
+      anteil_zaehler: form.anteil_zaehler === "" ? null : Number(form.anteil_zaehler),
+      anteil_nenner: form.anteil_nenner === "" ? null : Number(form.anteil_nenner),
       period_start: periodStart,
       period_end: periodEnd,
       items: [
@@ -184,6 +199,10 @@ export default function InvoicesPage() {
       (!hideTest || !testIds.has(inv.property_id)),
   );
 
+  const anteilInvalid =
+    (form.anteil_zaehler === "") !== (form.anteil_nenner === "") ||
+    (form.anteil_nenner !== "" && Number(form.anteil_nenner) <= 0);
+
   const canSave =
     form.property_id !== "" &&
     form.year !== "" &&
@@ -191,6 +210,7 @@ export default function InvoicesPage() {
     form.title.trim() !== "" &&
     form.amount !== "" &&
     Number(form.amount) > 0 &&
+    !anteilInvalid &&
     (!isWohnung || form.lease_unit_id !== "");
 
   const invoiceSum = (inv: Invoice): string =>
@@ -304,9 +324,18 @@ export default function InvoicesPage() {
                               </Table.Td>
                               <Table.Td>{inv.description ?? "—"}</Table.Td>
                               <Table.Td>
-                                {invoiceSum(inv) !== ""
-                                  ? `${Number(invoiceSum(inv)).toLocaleString("de-DE", { maximumFractionDigits: 2 })} €`
-                                  : "—"}
+                                <Stack gap={0}>
+                                  <Text size="sm">
+                                    {invoiceSum(inv) !== ""
+                                      ? `${Number(invoiceSum(inv)).toLocaleString("de-DE", { maximumFractionDigits: 2 })} €`
+                                      : "—"}
+                                  </Text>
+                                  {inv.anteil_zaehler && inv.anteil_nenner && (
+                                    <Text size="xs" c="dimmed">
+                                      Anteil {inv.anteil_zaehler}/{inv.anteil_nenner}
+                                    </Text>
+                                  )}
+                                </Stack>
                               </Table.Td>
                               <Table.Td>
                                 {invoiceComment(inv) ? (
@@ -426,6 +455,43 @@ export default function InvoicesPage() {
             value={form.comment}
             onChange={(e) => setForm({ ...form, comment: e.currentTarget.value })}
           />
+
+          <Group justify="flex-start">
+            <Button
+              size="compact-xs"
+              variant="subtle"
+              onClick={() => setShowAnteil((s) => !s)}
+            >
+              {showAnteil ? "Anrechnungsanteil ausblenden" : "Anrechnungsanteil (optional)"}
+            </Button>
+          </Group>
+
+          {showAnteil && (
+            <Stack gap="xs">
+              <Group grow>
+                <NumberInput
+                  label="Anteil Zähler"
+                  placeholder="z. B. 13044"
+                  value={form.anteil_zaehler}
+                  onChange={(v) => setForm({ ...form, anteil_zaehler: String(v ?? "") })}
+                  decimalScale={0}
+                  min={0}
+                />
+                <NumberInput
+                  label="Anteil Nenner"
+                  placeholder="z. B. 13764"
+                  value={form.anteil_nenner}
+                  onChange={(v) => setForm({ ...form, anteil_nenner: String(v ?? "") })}
+                  decimalScale={0}
+                  min={0}
+                />
+              </Group>
+              <Text size="xs" c="dimmed">
+                Anrechnungsanteil als Bruch (z. B. Wohnungsanteil laut Feststellbescheid
+                13044/13764). Angerechnet wird der Rechnungsbetrag × Zähler/Nenner.
+              </Text>
+            </Stack>
+          )}
 
           <Text size="sm" c="dimmed">
             Alle Rechnungen dieser Kostenstelle im Jahr {form.year} werden zusammengerechnet und

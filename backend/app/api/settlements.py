@@ -13,6 +13,7 @@ from ..db import get_db
 from ..schemas.category import NoInvoiceCreate
 from ..services.completeness import check_completeness
 from ..services.engine import compute_settlement
+from ..services.excel import generate_settlement_excel
 from ..services.pdf import generate_tenant_pdf
 
 router = APIRouter(prefix="/settlements", tags=["settlements"])
@@ -97,6 +98,25 @@ def unmark_no_invoice(flag_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Markierung nicht gefunden")
     db.delete(flag)
     db.commit()
+
+
+@router.get("/{property_id}/{year}/export.xlsx")
+def get_settlement_excel(property_id: int, year: int, db: Session = Depends(get_db)):
+    """Excel-Export der Jahresabrechnung (Matrix: Kostenarten × Mieter)."""
+    try:
+        data = generate_settlement_excel(db, property_id, year)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    prop = db.get(models.Property, property_id)
+    prop_name = _safe_filename(prop.name) if prop else "Objekt"
+    filename = f"Abrechnung_{year}_{prop_name}.xlsx"
+    return Response(
+        content=data,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{property_id}/{year}/tenants/{tenant_id}/pdf")

@@ -47,6 +47,8 @@ class InvoiceCreate(BaseModel):
     period_start: date
     period_end: date
     gross_amount: Optional[Decimal] = None
+    anteil_zaehler: Optional[Decimal] = None
+    anteil_nenner: Optional[Decimal] = None
     meta: dict = Field(default_factory=dict)
     items: list[InvoiceItemCreate] = Field(default_factory=list)
 
@@ -64,6 +66,8 @@ class InvoiceUpdate(BaseModel):
     period_start: Optional[date] = None
     period_end: Optional[date] = None
     gross_amount: Optional[Decimal] = None
+    anteil_zaehler: Optional[Decimal] = None
+    anteil_nenner: Optional[Decimal] = None
     meta: Optional[dict] = None
     items: Optional[list[InvoiceItemCreate]] = None
 
@@ -85,5 +89,7 @@ class InvoiceRead(BaseModel):
     period_start: date
     period_end: date
     gross_amount: Optional[Decimal]
+    anteil_zaehler: Optional[Decimal]
+    anteil_nenner: Optional[Decimal]
     meta: dict
     items: list[InvoiceItemRead]

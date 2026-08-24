@@ -39,6 +39,10 @@ class Invoice(Base):
     period_start: Mapped[date] = mapped_column(Date, nullable=False)
     period_end: Mapped[date] = mapped_column(Date, nullable=False)
     gross_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
+    # Anrechnungsanteil als Bruch Zähler/Nenner (z. B. Wohnungsanteil laut
+    # Feststellbescheid 13044/13764). Angerechnet wird Betrag × Zähler/Nenner.
+    anteil_zaehler: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 4), nullable=True)
+    anteil_nenner: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 4), nullable=True)
     meta: Mapped[dict] = mapped_column(MetaJSON(), nullable=False, default=dict)
 
     prop: Mapped["Property"] = relationship(back_populates="invoices")

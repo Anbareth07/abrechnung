@@ -130,6 +130,7 @@ export const abrechnungHelp: HelpContent = {
         "Je Mieter die Kostenstellen prüfen; über „?“ auf den Beträgen siehst du die Berechnung (Rechnungen, Tarife inkl. MwSt).",
         "Im eingeklappten Kopf siehst du sofort, ob Nachzahlung (-) oder Guthaben entstanden ist.",
         "Anschließend „Abrechnung finalisieren“ – der Stand wird eingefroren und je Mieter als PDF herunterladbar.",
+        "„Excel“ exportiert die gesamte Jahresabrechnung als Matrix (Kostenarten × Mieter, inkl. Summen, Vorauszahlungen und Saldo) zum Auswerten in Excel.",
       ],
     },
     {
@@ -137,6 +138,7 @@ export const abrechnungHelp: HelpContent = {
       items: [
         "„Ansicht: Live“ zeigt die laufende Berechnung, „Finalisiert“ den eingefrorenen Stand.",
         "Restwasser (Leerstand/Abweichung) wird als Hinweis ausgewiesen.",
+        "Die Excel-Datei enthält bei Hinweisen zusätzlich ein Blatt „Hinweise“ mit den Warnungen der Abrechnung.",
       ],
     },
   ],
