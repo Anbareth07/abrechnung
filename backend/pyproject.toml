@@ -24,6 +24,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "httpx>=0.27",
+    "pypdf>=4.0",
 ]
 # PostgreSQL-Treiber nur bei Bedarf (SQLite ist Default in den Containern).
 # Hinweis: psycopg-binary hat KEINE ARMv7-Wheels -> auf Raspberry Pi (32-bit)

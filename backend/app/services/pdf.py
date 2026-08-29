@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from decimal import Decimal
 from io import BytesIO
 from typing import Optional
@@ -19,11 +18,8 @@ from reportlab.platypus import (
 )
 
 from .. import models
-from .engine import compute_settlement
+from .engine import TenantLine, compute_settlement
 from .prorata import year_bounds
-from .water import unit_water_consumption
-
-_CENTS = Decimal("0.01")
 
 
 def _g(value: Optional[Decimal] | int | float | None, digits: int = 2) -> str:
@@ -32,6 +28,45 @@ def _g(value: Optional[Decimal] | int | float | None, digits: int = 2) -> str:
         return "—"
     s = f"{float(value):,.{digits}f}"
     return s.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
+
+
+def _tenant_table_rows(line: TenantLine) -> list[list[str]]:
+    """Zeilen der Mieter-Tabelle – entspricht exakt der Tabellen-Ansicht (line.details).
+
+    Jede Kostenstelle erscheint als eigene Zeile (auch die einzelnen
+    Verbrauchs-Kostenstellen wie Trink-/Schmutzwasser statt einer
+    aggregierten "Wasserverbrauch"-Zeile).
+    """
+    def _unit(amount: Optional[Decimal], decimals: int = 2, suffix: str = "") -> str:
+        if amount is None:
+            return "—"
+        return f"{_g(amount, decimals)} {suffix}".strip()
+
+    rows: list[list[str]] = []
+    for d in line.details:
+        if d.allocation_key == "NONE":
+            continue
+        if d.allocation_key == "CONSUMPTION":
+            total_units = _unit(d.basis_total, 2, "m³")
+            share = _unit(d.basis_share, 2, "m³")
+        elif d.allocation_key in ("WF", "NF"):
+            total_units = _unit(d.basis_total, 2, "m²")
+            share = _unit(d.basis_share, 2, "m²")
+        else:  # WOHNUNG – keine Verteil-Basis
+            total_units = "—"
+            share = "—"
+        rows.append(
+            [
+                d.name,
+                _g(d.year_cost),
+                d.basis_label,
+                total_units,
+                share,
+                str(line.tenant_days),
+                _g(d.amount),
+            ]
+        )
+    return rows
 
 
 def generate_tenant_pdf(session, property_id: int, year: int, tenant_id: int) -> bytes:
@@ -49,17 +84,6 @@ def generate_tenant_pdf(session, property_id: int, year: int, tenant_id: int) ->
     ys, ye = year_bounds(year)
     occ_start = max(tenant.move_in, ys)
     occ_end = min(tenant.move_out, ye) if tenant.move_out else ye
-
-    tenant_consumption: Optional[Decimal] = None
-    if result.water is not None and result.water_price_per_m3 is not None:
-        _prop = session.get(models.Property, result.property_id)
-        tenant_consumption, _ = unit_water_consumption(
-            session,
-            line.lease_unit_id,
-            occ_start,
-            occ_end,
-            include_washing_machine=bool(_prop.wasser_waschmaschinen_aktiv) if _prop else True,
-        )
 
     buffer = BytesIO()
     # Querformat (Tabelle ist breit); das PDF enthält nur die Tabelle.
@@ -95,34 +119,7 @@ def generate_tenant_pdf(session, property_id: int, year: int, tenant_id: int) ->
         "Betrag Mieter",
     ]
 
-    rows: list[list[str]] = []
-    for cl in result.category_lines:
-        if cl.allocation_key in ("CONSUMPTION", "NONE"):
-            continue
-        amount = line.breakdown.get(cl.code, Decimal("0"))
-        if cl.allocation_key == "WF":
-            key = "Wohnfläche"
-            total_units, share = result.total_wf, line.living_area
-        else:
-            key = "Nutzfläche"
-            total_units, share = result.total_nf, line.utility_area
-        rows.append(
-            [cl.name, _g(cl.year_cost), key, f"{_g(total_units)} m²", f"{_g(share)} m²", str(line.tenant_days), _g(amount)]
-        )
-
-    if result.water is not None and result.water_price_per_m3 is not None:
-        amount = line.breakdown.get("WASSER_VERBRAUCH", Decimal("0"))
-        rows.append(
-            [
-                "Wasserverbrauch (Trink- + Schmutzwasser)",
-                _g(result.water_total_cost),
-                "Verbrauch",
-                f"{_g(result.water.total_consumption, 2)} m³",
-                f"{_g(tenant_consumption, 2)} m³",
-                str(line.tenant_days),
-                _g(amount),
-            ]
-        )
+    rows = _tenant_table_rows(line)
 
     rows.append(["Nebenkosten gesamt", "", "", "", "", "", _g(line.total_costs)])
     rows.append(["Vorauszahlungen", "", "", "", "", "", _g(line.advance_total)])
