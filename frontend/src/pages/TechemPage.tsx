@@ -244,9 +244,11 @@ export default function TechemPage() {
             mb="sm"
           />
 
-          <Button onClick={save} disabled={!canSave}>
-            Speichern
-          </Button>
+          <Group mt="xs">
+            <Button onClick={save} disabled={!canSave}>
+              Speichern
+            </Button>
+          </Group>
         </Card>
       )}
 
